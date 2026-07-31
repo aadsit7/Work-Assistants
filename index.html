@@ -320,6 +320,41 @@ body.dark .pill.ok{color:#5FD97C}
 .notice b{display:block;margin-bottom:3px;color:inherit}
 .notice button{color:var(--accent);font-weight:600;font-size:13.5px;margin-top:7px}
 
+/* ---------- connection / boot ---------- */
+.connDot{
+  width:9px;height:9px;border-radius:50%;background:#8E8E93;flex:none;
+  transition:background .3s ease, box-shadow .3s ease;
+}
+.connDot.on{background:#34C759;box-shadow:0 0 0 3px color-mix(in srgb,#34C759 20%,transparent)}
+.appBanner[hidden]{display:none}
+.appBanner{
+  flex:none;display:flex;align-items:center;gap:10px;padding:9px 20px;
+  font-size:13px;line-height:1.45;color:var(--label2);
+  background:color-mix(in srgb,var(--accent) 8%,var(--card));
+  border-bottom:.5px solid var(--sep);
+}
+.appBanner .txt{flex:1;min-width:0}
+.appBanner .txt b{color:var(--label);font-weight:600}
+.appBanner .x{
+  width:22px;height:22px;border-radius:50%;background:var(--field);color:var(--label2);
+  font-size:11px;line-height:1;display:grid;place-items:center;flex:none;
+  transition:transform .3s var(--spring);
+}
+.appBanner .x:active{transform:scale(.86)}
+.bootVeil{
+  position:fixed;inset:0;z-index:90;display:flex;flex-direction:column;gap:14px;
+  align-items:center;justify-content:center;background:var(--wash);
+  font-size:13.5px;color:var(--label2);transition:opacity .35s ease;
+}
+.bootVeil.off{opacity:0;pointer-events:none}
+.spinner{
+  width:26px;height:26px;border-radius:50%;
+  border:3px solid var(--field);border-top-color:var(--accent);
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+body.no-motion .spinner{animation-duration:1.6s}
+
 /* ---------- messenger ---------- */
 .tabs{padding:10px 16px;border-bottom:.5px solid var(--sep);background:var(--card);flex:none}
 .tabs .seg{width:100%}
@@ -420,10 +455,13 @@ body.dark .pill.ok{color:#5FD97C}
 </head>
 <body>
 
+<div class="bootVeil" id="bootVeil"><div class="spinner"></div><span>Loading your workspace…</span></div>
+
 <nav class="nav">
   <div class="mark" id="mark">N</div>
   <div class="navTitle"><b id="navCompany">Northwind Cloud</b><span id="navSub">Org chart</span></div>
   <div class="navSpace"></div>
+  <span class="connDot" id="connDot" role="status" title="Running on built-in sample data" aria-label="Running on built-in sample data"></span>
   <div class="seg paneSwitch" id="paneSwitch">
     <span class="thumb"></span>
     <button data-pane="chat" aria-pressed="true">Chat</button>
@@ -436,6 +474,11 @@ body.dark .pill.ok{color:#5FD97C}
     </svg>
   </button>
 </nav>
+
+<div class="appBanner" id="appBanner" hidden>
+  <span class="txt" id="appBannerText"></span>
+  <button class="x" id="appBannerClose" aria-label="Dismiss">✕</button>
+</div>
 
 <div class="stage">
 
@@ -516,7 +559,13 @@ body.dark .pill.ok{color:#5FD97C}
 
 <script>
 /* ========== data ========== */
-const DEPTS = {
+/* Base URL of the Apps Script web app. Safe to commit: it answers nothing
+   without the access token, which lives only in this browser (localStorage,
+   key "pa_token") and is appended to the URL at runtime. */
+const SHEET_ENDPOINT = "https://script.google.com/macros/s/AKfycbzowjBwMMSEWcDHW7Z94Ga-57iacv8tOoirSQp4hGJBshvUnWrnn7thKwvzCvmk9_mM/exec";
+const TOKEN_KEY = "pa_token";
+
+const DEFAULT_DEPTS = {
   exec:      { name:"Executive",        tint:"#5A5A60" },
   marketing: { name:"Marketing",        tint:"#FF375F" },
   sales:     { name:"Sales",            tint:"#0A84FF" },
@@ -525,6 +574,19 @@ const DEPTS = {
   legal:     { name:"Legal",            tint:"#5E5CE6" },
   people:    { name:"People",           tint:"#F08C00" }
 };
+/* The Sheet keys departments as "dept_sales", not "sales", so this map must be
+   rebuilt from the loaded roles before anything renders. buildPrompt reads
+   deptOf(role).name; a stale map assembles a different prompt than the server
+   and every message bounces with STALE_BRIEF. */
+let DEPTS = structuredClone(DEFAULT_DEPTS);
+const HEX_COLOR = /^#[0-9a-fA-F]{3,8}$/;
+function rebuildDepts(roles){
+  const map = {};
+  (roles || []).forEach(r => {
+    if(r.dept && r.deptName && !map[r.dept]) map[r.dept] = { name:String(r.deptName), tint:HEX_COLOR.test(r.tint) ? r.tint : "#8E8E93" };
+  });
+  DEPTS = Object.keys(map).length ? map : structuredClone(DEFAULT_DEPTS);
+}
 
 const DEFAULTS = {
   company:"Northwind Cloud",
@@ -535,7 +597,6 @@ const DEFAULTS = {
   accent:"#0A84FF",
   lines:true,
   motion:true,
-  endpoint:"",
   roles:[
     { id:"ceo", parent:null, dept:"exec", title:"Chief Executive",
       look:{skin:"#F2D3B8",hair:"#2E2A28",style:1,prop:"none"},
@@ -644,11 +705,16 @@ const PROPS = ["none","glasses","headset","megaphone","gavel","badge","mug"];
 
 function normalizeRoles(){
   state.roles.forEach(r => {
-    r.knowledge = r.knowledge || [];
+    r.parent = r.parent || null;
+    r.knowledge = Array.isArray(r.knowledge) ? r.knowledge.map(String) : (r.knowledge ? [String(r.knowledge)] : []);
     r.guardrails = r.guardrails || "";
     r.outOfScope = r.outOfScope || "";
-    r.version = r.version || 1;
+    r.version = Number(r.version) || 1;
     r.look = Object.assign({skin:"#F2D3B8",hair:"#2E2A28",style:0,prop:"none"}, r.look || {});
+    r.look.style = Number(r.look.style) || 0;
+    r.look.prop = r.look.prop || "none";
+    if(!HEX_COLOR.test(r.look.skin)) r.look.skin = "#F2D3B8";
+    if(!HEX_COLOR.test(r.look.hair)) r.look.hair = "#2E2A28";
   });
 }
 let state = structuredClone(DEFAULTS);
@@ -657,6 +723,67 @@ const $ = (s,r=document)=>r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const roleById = id => state.roles.find(r => r.id === id);
 const deptOf = r => DEPTS[r.dept] || {name:"Team", tint:"#8E8E93"};
+
+/* ========== sheet backend ========== */
+let sheetConnected = false;
+function getToken(){ try{ return (localStorage.getItem(TOKEN_KEY) || "").trim(); }catch(e){ return ""; } }
+function setToken(v){ try{ v && v.trim() ? localStorage.setItem(TOKEN_KEY, v.trim()) : localStorage.removeItem(TOKEN_KEY); }catch(e){} }
+
+/* text/plain on purpose: Apps Script doesn't answer CORS preflight, and a
+   JSON content type would trigger one. The token rides the query string. */
+async function sheetCall(payload, timeoutMs = 25000){
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  try{
+    const res = await fetch(SHEET_ENDPOINT + "?token=" + encodeURIComponent(getToken()), {
+      method:"POST",
+      headers:{ "Content-Type":"text/plain;charset=utf-8" },
+      redirect:"follow",
+      signal: ctl.signal,
+      body: JSON.stringify(payload)
+    });
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    if(data && data.ok === false){
+      const err = new Error(data.error || data.message || "request failed");
+      err.code = data.code || "";
+      throw err;
+    }
+    return data;
+  }finally{ clearTimeout(timer); }
+}
+
+function setConnected(on){
+  sheetConnected = on;
+  const dot = $("#connDot");
+  const label = on ? "Connected — loaded from your Google Sheet" : "Running on built-in sample data";
+  dot.classList.toggle("on", on);
+  dot.title = label;
+  dot.setAttribute("aria-label", label);
+}
+function showBanner(html){ $("#appBannerText").innerHTML = html; $("#appBanner").hidden = false; }
+function hideBanner(){ $("#appBanner").hidden = true; }
+const SAMPLE_BANNER = "Running on built-in sample data — add your access token in Settings to connect the Sheet.";
+
+const asBool = (v, dflt) => (v === undefined || v === null || v === "") ? dflt
+  : v === true || v === "TRUE" || v === "true" || v === 1 || v === "1";
+
+function applyConfig(cfg){
+  state = {
+    company: String(cfg.company || DEFAULTS.company),
+    subtitle: String(cfg.subtitle || DEFAULTS.subtitle),
+    title: String(cfg.title || DEFAULTS.title),
+    blurb: String(cfg.blurb || DEFAULTS.blurb),
+    appearance: cfg.appearance === "dark" ? "dark" : "light",
+    accent: String(cfg.accent || DEFAULTS.accent),
+    lines: asBool(cfg.lines, true),
+    motion: asBool(cfg.motion, true),
+    settings: cfg.settings || {},
+    roles: cfg.roles.map(r => Object.assign({}, r))
+  };
+  rebuildDepts(state.roles);
+  normalizeRoles();
+}
 
 /* ========== character ========== */
 function hairPath(style, color){
@@ -746,50 +873,24 @@ function applyChrome(){
 }
 
 /* =================================================================
-   AGENT — the only place you need to touch to go live.
+   AGENT — talks to the Apps Script web app behind SHEET_ENDPOINT.
 
-   Set the endpoint in Settings › Chat (or hard-code state.endpoint).
-   The page POSTs this JSON to your Apps Script web app:
+   Every call is a POST of JSON.stringify({ action, ... }) with
+   Content-Type text/plain;charset=utf-8 — text/plain on purpose: it
+   keeps the browser from sending a CORS preflight, which Apps Script
+   web apps don't answer. The access token is appended to the URL at
+   runtime and is never written into this file.
 
-     { roleId, roleTitle, company, system, messages:[{role,content}] }
+     { action:"config" }                  -> org chart, settings, personas
+     { action:"savePersona", persona }    -> write one brief back
+     { action:"chat", roleId, roleTitle, company, system, promptHash,
+       promptVersion, personaVersion, temperature,
+       messages:[{role,content}] }        -> { "reply": "text" }
 
-   ...and expects back: { "reply": "text" }   (also accepts .text / .content)
-
-   Content-Type is text/plain on purpose: it keeps the browser from
-   sending a CORS preflight, which Apps Script web apps don't answer.
-
-   ---- Code.gs sketch -------------------------------------------
-   function doPost(e){
-     const req = JSON.parse(e.postData.contents);
-     const key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
-     const res = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
-       method:'post', contentType:'application/json', muteHttpExceptions:true,
-       headers:{ 'x-api-key': key, 'anthropic-version':'2023-06-01' },
-       payload: JSON.stringify({
-         model:'claude-sonnet-5', max_tokens:1024,
-         temperature: req.temperature,        // low by default: fidelity over flourish
-         system: req.system, messages: req.messages
-       })
-     });
-     const data = JSON.parse(res.getContentText());
-     const reply = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
-     // Rebuild the prompt server-side from the Personas tab and compare fingerprints.
-     // A mismatch means the client is running a stale brief -- reject rather than answer.
-     // const check = buildPrompt(personaFromSheet(req.roleId));
-     // if (check.hash !== req.promptHash) return err('stale brief');
-     SpreadsheetApp.getActive().getSheetByName('Messages').appendRow([
-       msgId, req.interactionId, seq, req.orgChartId, req.roleId, req.userId,
-       'assistant', reply, 'text', '', '', modelId,
-       data.usage.input_tokens, data.usage.output_tokens, latencyMs,
-       data.stop_reason, '', '', '', 'FALSE', '', 'none', req.deviceId, nowIso,
-       req.promptHash, req.personaVersion, req.temperature
-     ]);
-     return ContentService.createTextOutput(JSON.stringify({reply}))
-       .setMimeType(ContentService.MimeType.JSON);
-   }
-   Deploy as a web app, execute as you, access "anyone".
-   Keep the API key in Script Properties — never in this file.
-   ---------------------------------------------------------------- */
+   The server rebuilds the prompt from the Personas tab and compares
+   fingerprints; a mismatch is rejected as STALE_BRIEF rather than
+   answered. Keep the Anthropic key in Script Properties — never here.
+================================================================= */
 const threads = {};              // roleId -> [{role:"user"|"assistant", content, error}]
 let tab = "chat", waitingFor = null;
 
@@ -869,26 +970,19 @@ const Agent = {
   async reply(role, history){
     const built = buildPrompt(role);
     if(built.missing.length) throw new Error("brief incomplete: " + built.missing.join(", "));
-    const endpoint = (state.endpoint || "").trim();
-    if(!endpoint) return this.placeholder(role);
-    const res = await fetch(endpoint, {
-      method:"POST",
-      headers:{ "Content-Type":"text/plain;charset=utf-8" },
-      redirect:"follow",
-      body: JSON.stringify({
-        roleId: role.id,
-        roleTitle: role.title,
-        company: state.company,
-        system: built.text,
-        promptHash: built.hash,
-        promptVersion: PROMPT_VERSION,
-        personaVersion: role.version || 1,
-        temperature: FIDELITY.temperature,
-        messages: history.filter(m => !m.error).map(m => ({ role:m.role, content:m.content }))
-      })
-    });
-    if(!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
+    if(!getToken()) return this.placeholder(role);
+    const data = await sheetCall({
+      action:"chat",
+      roleId: role.id,
+      roleTitle: role.title,
+      company: state.company,
+      system: built.text,
+      promptHash: built.hash,
+      promptVersion: PROMPT_VERSION,
+      personaVersion: role.version || 1,
+      temperature: FIDELITY.temperature,
+      messages: history.filter(m => !m.error).map(m => ({ role:m.role, content:m.content }))
+    }, 65000);
     const text = data.reply || data.text || data.content;
     if(!text) throw new Error("empty reply");
     return typeof text === "string" ? text : JSON.stringify(text);
@@ -901,7 +995,7 @@ const Agent = {
       (role.knowledge||[]).length ? `I'd check ${role.knowledge.slice(0,2).join(" and ")} before giving you a real answer.` : "",
       role.outcome ? `What you'd get back: ${low(role.outcome)}.` : ""
     ].filter(Boolean);
-    return "Placeholder reply — no agent endpoint connected yet.\n\n" + parts.join(" ");
+    return "Placeholder reply — add your access token in Settings › Chat to get real answers.\n\n" + parts.join(" ");
   }
 };
 
@@ -940,7 +1034,7 @@ function renderThread(){
     box.innerHTML = threadNotices(r) + `<div class="empty">
       ${avatarSVG(r)}
       <h4>${esc(r.title)}</h4>
-      <p>Answers come from the brief on the other tab${state.endpoint ? "" : ". No endpoint connected yet, so replies are placeholders"}.</p>
+      <p>Answers come from the brief on the other tab${getToken() ? "" : ". No access token yet, so replies are placeholders"}.</p>
       <div class="starters">${STARTERS.map(s=>`<button class="starter" data-starter="${esc(s)}">${esc(s)}</button>`).join("")}</div>
     </div>`;
     return;
@@ -984,7 +1078,7 @@ async function sendMessage(text){
   }catch(err){
     threads[r.id].push({
       role:"assistant", error:true, at:Date.now(),
-      content:"Couldn't reach the agent (" + err.message + "). Check the endpoint in Settings › Chat, and that the Apps Script deployment allows access to anyone."
+      content:"Couldn't get a reply (" + (err.code ? err.code + ": " : "") + err.message + "). Check your access token in Settings › Chat, and that the Apps Script deployment allows access to anyone."
     });
   }
   waitingFor = null;
@@ -1104,12 +1198,12 @@ function renderMain(){
 
     <div class="gLabel">Chat</div>
     <div class="group">
-      <div class="row col"><div class="lab">Agent endpoint</div>
-        <textarea class="ta oneline" data-text="endpoint" placeholder="https://script.google.com/macros/s/.../exec">${esc(state.endpoint||"")}</textarea>
+      <div class="row col"><div class="lab">Access token</div>
+        <input class="ta oneline" type="password" data-token placeholder="Paste your access token" value="${esc(getToken())}" autocomplete="off" spellcheck="false" aria-label="Access token">
       </div>
-      <div class="row"><span class="k" style="font-size:14px;color:var(--label2)">Status<small id="epStatus">${state.endpoint ? "Messages post to your web app." : "Empty — replies are placeholders until you paste a URL."}</small></span></div>
+      <div class="row"><span class="k" style="font-size:14px;color:var(--label2)">Status<small id="epStatus">${connStatusText()}</small></span></div>
     </div>
-    <p class="footNote">Your Apps Script receives <code>{ roleId, roleTitle, company, system, messages }</code> and should return <code>{ "reply": "..." }</code>. Keep the Anthropic key in Script Properties, not in this page.</p>
+    <p class="footNote">The token stays in this browser (<code>localStorage</code>) and unlocks your Sheet's web app — personas and settings load from there once it's set. Keep the Anthropic key in Script Properties, never in this page.</p>
 
     <div class="gLabel">Configuration</div>
     <div class="group">
@@ -1234,6 +1328,71 @@ function refreshAfterEdit({chart=true, card=true, main=false, pane=false} = {}){
   if(pane) renderRolePane();
 }
 
+/* ---------- sheet sync ---------- */
+function connStatusText(){
+  if(sheetConnected) return "Connected — personas and settings come from your Sheet.";
+  return getToken()
+    ? "Not connected. Reload the page to load from the Sheet."
+    : "Empty — running on built-in sample data until you paste a token.";
+}
+let reconnectTimer = null;
+function scheduleReconnect(){
+  clearTimeout(reconnectTimer);
+  setConnected(false);
+  reconnectTimer = setTimeout(async () => {
+    if(!getToken()){ if($("#epStatus")) $("#epStatus").textContent = connStatusText(); return; }
+    try{
+      const cfg = await sheetCall({ action:"config" });
+      if(!Array.isArray(cfg.roles) || !cfg.roles.length) throw new Error("no personas in the Sheet");
+      applyConfig(cfg);
+      setConnected(true);
+      hideBanner();
+      applyChrome(); renderChart(); renderMain();
+      selectRole(rootRole().id);
+      if($("#epStatus")) $("#epStatus").textContent = connStatusText();
+    }catch(err){
+      if($("#epStatus")) $("#epStatus").textContent = "Couldn't connect: " + err.message;
+    }
+  }, 900);
+}
+
+/* Debounced write-back: one savePersona per pause in typing. */
+function touchRole(r){ r.version = (r.version || 1) + 1; schedulePersonaSave(r.id); }
+let saveTimer = null, savePendingId = null;
+function schedulePersonaSave(id){
+  if(!sheetConnected || !id) return;
+  if(savePendingId && savePendingId !== id) flushPersonaSave();
+  savePendingId = id;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushPersonaSave, 1500);
+}
+async function flushPersonaSave(){
+  clearTimeout(saveTimer);
+  const r = roleById(savePendingId);
+  savePendingId = null;
+  if(!r || !sheetConnected || !getToken()) return;
+  const d = deptOf(r);
+  try{
+    const res = await sheetCall({ action:"savePersona", persona:{
+      id:r.id, parent:r.parent, dept:r.dept, deptName:d.name, tint:d.tint,
+      title:r.title || "", personality:r.personality || "", context:r.context || "",
+      task:r.task || "", outcome:r.outcome || "", guardrails:r.guardrails || "",
+      outOfScope:r.outOfScope || "", knowledge:(r.knowledge || []).slice(),
+      version:r.version || 1,
+      look:{ skin:r.look.skin, hair:r.look.hair, style:r.look.style, prop:r.look.prop }
+    }});
+    if(res && res.version) r.version = Number(res.version) || r.version;
+  }catch(err){
+    if(err.code === "CONFLICT"){
+      showBanner("<b>Another device saved first.</b> “" + esc(r.title) +
+        "” was updated somewhere else — reload this page to pick up the latest version, then re-apply your edit.");
+    }else{
+      showBanner("Couldn't save “" + esc(r.title) + "” to the Sheet (" + esc(err.message) +
+        "). The edit is still in this browser.");
+    }
+  }
+}
+
 /* ========== events ========== */
 $("#tree").addEventListener("click", e => {
   const n = e.target.closest(".node"); if(!n) return;
@@ -1314,13 +1473,15 @@ $("#paneMain").addEventListener("click", e => {
   if(act) mainAction(act.dataset.act, act);
 });
 $("#paneMain").addEventListener("input", e => {
+  const tok = e.target.closest("[data-token]");
+  if(tok){
+    setToken(tok.value);
+    if($("#epStatus")) $("#epStatus").textContent = getToken() ? "Connecting to the Sheet…" : connStatusText();
+    scheduleReconnect();
+    return;
+  }
   const f = e.target.closest("[data-text]"); if(!f) return;
   state[f.dataset.text] = f.value; applyChrome();
-  if(f.dataset.text === "endpoint" && $("#epStatus")){
-    $("#epStatus").textContent = state.endpoint.trim()
-      ? "Messages post to your web app."
-      : "Empty — replies are placeholders until you paste a URL.";
-  }
 });
 
 /* role pane interactions */
@@ -1328,13 +1489,13 @@ $("#paneRole").addEventListener("click", e => {
   const r = roleById(editingId); if(!r) return;
   const t = e.target;
   const skin = t.closest("[data-look-skin]");
-  if(skin){ r.look.skin = skin.dataset.lookSkin; renderRolePane(); refreshAfterEdit(); return; }
+  if(skin){ r.look.skin = skin.dataset.lookSkin; touchRole(r); renderRolePane(); refreshAfterEdit(); return; }
   const hair = t.closest("[data-look-hair]");
-  if(hair){ r.look.hair = hair.dataset.lookHair; renderRolePane(); refreshAfterEdit(); return; }
-  if(t.closest("[data-look-style]")){ r.look.style = (r.look.style + 1) % 6; renderRolePane(); refreshAfterEdit(); return; }
-  if(t.closest("[data-look-prop]")){ r.look.prop = PROPS[(PROPS.indexOf(r.look.prop) + 1) % PROPS.length]; renderRolePane(); refreshAfterEdit(); return; }
+  if(hair){ r.look.hair = hair.dataset.lookHair; touchRole(r); renderRolePane(); refreshAfterEdit(); return; }
+  if(t.closest("[data-look-style]")){ r.look.style = (r.look.style + 1) % 6; touchRole(r); renderRolePane(); refreshAfterEdit(); return; }
+  if(t.closest("[data-look-prop]")){ r.look.prop = PROPS[(PROPS.indexOf(r.look.prop) + 1) % PROPS.length]; touchRole(r); renderRolePane(); refreshAfterEdit(); return; }
   const rm = t.closest("[data-chip-remove]");
-  if(rm){ r.knowledge.splice(+rm.dataset.chipRemove, 1); renderRolePane(); refreshAfterEdit(); return; }
+  if(rm){ r.knowledge.splice(+rm.dataset.chipRemove, 1); touchRole(r); renderRolePane(); refreshAfterEdit(); return; }
   if(t.closest("[data-chip-add]")){ addChip(); return; }
   if(t.closest('[data-act="delete"]')) deleteRole();
 });
@@ -1343,7 +1504,7 @@ $("#paneRole").addEventListener("input", e => {
   const f = e.target.closest("[data-role-field]");
   if(f){
     r[f.dataset.roleField] = f.value;
-    r.version = (r.version || 1) + 1;
+    touchRole(r);
     refreshAfterEdit();
     if(f.dataset.roleField === "title") $("#sheetTitle").textContent = r.title;
   }
@@ -1351,7 +1512,7 @@ $("#paneRole").addEventListener("input", e => {
 $("#paneRole").addEventListener("change", e => {
   const r = roleById(editingId); if(!r) return;
   const sel = e.target.closest('[data-look="dept"]');
-  if(sel){ r.dept = sel.value; renderRolePane(); refreshAfterEdit(); }
+  if(sel){ r.dept = sel.value; touchRole(r); renderRolePane(); refreshAfterEdit(); }
 });
 $("#paneRole").addEventListener("keydown", e => {
   if(e.key === "Enter" && e.target.id === "chipInput"){ e.preventDefault(); addChip(); }
@@ -1360,6 +1521,7 @@ function addChip(){
   const r = roleById(editingId), input = $("#chipInput");
   const val = input.value.trim(); if(!val) return;
   r.knowledge = r.knowledge || []; r.knowledge.push(val);
+  touchRole(r);
   renderRolePane(); refreshAfterEdit();
   $("#chipInput").focus();
 }
@@ -1417,7 +1579,8 @@ function mainAction(act, el){
       setTimeout(() => { armedReset = false; renderMain(); }, 4000);
       return;
     }
-    state = structuredClone(DEFAULTS); normalizeRoles(); armedReset = false;
+    state = structuredClone(DEFAULTS); rebuildDepts(state.roles); normalizeRoles(); armedReset = false;
+    setConnected(false);
     Object.keys(threads).forEach(k => delete threads[k]);
     renderMain(); applyChrome(); renderChart(); selectRole(rootRole().id);
   }
@@ -1430,7 +1593,9 @@ $("#importFile").addEventListener("change", e => {
       const data = JSON.parse(reader.result);
       if(!Array.isArray(data.roles) || !data.roles.length) throw new Error("no roles");
       state = Object.assign(structuredClone(DEFAULTS), data);
+      rebuildDepts(state.roles);
       normalizeRoles();
+      setConnected(false);
       renderMain(); goDeep(false); applyChrome(); renderChart(); selectRole(rootRole().id);
     }catch(err){
       alert("That file isn't a chart this page can read. Export one from Settings to see the expected format.");
@@ -1462,10 +1627,31 @@ function autoFit(){
 }
 
 /* ========== go ========== */
-normalizeRoles();
-applyChrome();
-renderChart();
-selectRole(rootRole().id);
+$("#appBannerClose").addEventListener("click", hideBanner);
+
+async function boot(){
+  let banner = "";
+  if(getToken()){
+    try{
+      const cfg = await sheetCall({ action:"config" });
+      if(!Array.isArray(cfg.roles) || !cfg.roles.length) throw new Error("no personas in the Sheet");
+      applyConfig(cfg);
+      setConnected(true);
+    }catch(err){
+      banner = SAMPLE_BANNER + " (The Sheet said: " + esc(err.message) + ")";
+    }
+  }else{
+    banner = SAMPLE_BANNER;
+  }
+  if(!sheetConnected) rebuildDepts(state.roles);
+  normalizeRoles();
+  applyChrome();
+  renderChart();
+  selectRole(rootRole().id);
+  if(banner) showBanner(banner);
+  $("#bootVeil").classList.add("off");
+}
+boot();
 </script>
 </body>
 </html>
