@@ -1590,6 +1590,7 @@ function renderRolePane(){
     <div class="gLabel">Brief</div>
     <div class="group">
       <div class="row"><span class="k">Role title</span><input class="text" data-role-field="title" value="${esc(r.title)}"></div>
+      <div class="row"><span class="k">Language<small>Locale for voice dictation, like en-US or de-DE. Blank uses en-US.</small></span><input class="text" data-role-field="language" value="${esc(r.language||"")}" placeholder="en-US"></div>
       ${long("personality","Personality","How they show up")}
       ${long("context","Context","What they need to know about the business")}
       ${long("task","Task","What they're responsible for")}
@@ -1727,6 +1728,9 @@ async function flushPersonaSave(){
       title:r.title || "", personality:r.personality || "", context:r.context || "",
       task:r.task || "", outcome:r.outcome || "", guardrails:r.guardrails || "",
       outOfScope:r.outOfScope || "", knowledge:(r.knowledge || []).slice(),
+      /* savePersona sends the complete persona record — leaving Language out
+         would let any brief edit blank the dictation locale in the Sheet */
+      language:(r.language || "").trim(),
       version:r.version || 1,
       look:{ skin:r.look.skin, hair:r.look.hair, style:r.look.style, prop:r.look.prop }
     }});
