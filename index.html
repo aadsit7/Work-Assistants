@@ -229,17 +229,31 @@ body.no-motion .char,body.no-motion .eyes,body.no-motion .hand{animation:none}
   flex:1;min-height:0;display:flex;flex-direction:column;
   width:100%;max-width:720px;margin-inline:auto;
 }
-.cardTop{
-  padding:20px 20px 16px;display:flex;gap:14px;align-items:center;flex:none;
+/* The header row holds two separate controls — the role switcher is itself a
+   button, so the speaker toggle must be a flex sibling, never a child. */
+.cardHead{
+  display:flex;align-items:center;flex:none;
   border-bottom:.5px solid var(--sep);
   background:linear-gradient(180deg, color-mix(in srgb, var(--tint) 12%, var(--card)), var(--card));
+}
+.cardTop{
+  padding:20px 20px 16px;display:flex;gap:14px;align-items:center;flex:1;min-width:0;
 }
 .cardTop .avatar{width:56px;height:56px;flex:none}
 .cardTop .meta{min-width:0;flex:1}
 .cardTop .eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--tint)}
 .cardTop .titleTxt{margin:3px 0 0;font-size:20px;font-weight:700;letter-spacing:-.02em;line-height:1.2}
-.cardTop{width:100%;text-align:left;border:0;font:inherit;cursor:pointer;transition:filter .2s}
+.cardTop{text-align:left;border:0;font:inherit;cursor:pointer;transition:filter .2s}
 .cardTop:active{filter:brightness(.96)}
+.speak{
+  width:34px;height:34px;border-radius:50%;background:var(--field);color:var(--label2);
+  display:grid;place-items:center;flex:none;margin-right:20px;
+  transition:transform .3s var(--spring),background .25s ease,color .25s ease;
+}
+.speak[hidden]{display:none}
+.speak svg{width:18px;height:18px}
+.speak:active{transform:scale(.86)}
+.speak.on{background:var(--accent);color:#fff}
 .pickChev{width:13px;height:8px;flex:none;color:var(--label3);transition:transform .35s var(--spring)}
 .cardTop:active .pickChev{transform:translateY(2px)}
 .close{
@@ -642,6 +656,7 @@ body.no-motion .spinner{animation-duration:1.6s}
 
 <aside class="card" id="card" aria-labelledby="cardTitle">
   <div class="paneCol">
+  <div class="cardHead">
   <button class="cardTop" id="cardTop" aria-haspopup="dialog" aria-label="Switch role">
     <div id="cardAvatar"></div>
     <div class="meta">
@@ -650,6 +665,10 @@ body.no-motion .spinner{animation-duration:1.6s}
     </div>
     <svg class="pickChev" viewBox="0 0 14 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l6 6 6-6"/></svg>
   </button>
+  <button class="speak" id="speakBtn" hidden aria-pressed="false" aria-label="Read replies aloud">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6.5 8.5H3.5v7h3L11 19V5Z"/><path d="M15 9.5a4 4 0 0 1 0 5"/><path d="M17.5 7a8 8 0 0 1 0 10"/></svg>
+  </button>
+  </div>
   <div class="tabs">
     <div class="seg b" id="tabSeg">
       <span class="thumb"></span>
@@ -893,6 +912,7 @@ function normalizeRoles(){
     r.guardrails = r.guardrails || "";
     r.outOfScope = r.outOfScope || "";
     r.language = String(r.language || "").trim();   // dictation language, e.g. "de-DE"
+    r.voice = String(r.voice || "").trim();         // TTS voice name from the VoiceProfiles tab; "" = Automatic
     r.version = Number(r.version) || 1;
     r.look = Object.assign({skin:"#F2D3B8",hair:"#2E2A28",style:0,prop:"none"}, r.look || {});
     r.look.style = Number(r.look.style) || 0;
@@ -1315,6 +1335,186 @@ const Dictation = {
   }
 };
 
+/* =================================================================
+   SPEECH — replies read aloud, per persona.
+
+   The speaker toggle in the messenger header is remembered per
+   persona (localStorage, key "pa_tts_on"). A reply containing a
+   ===SPOKEN=== marker is displayed as the half before it and spoken
+   as the half after it; a reply without the marker is spoken as its
+   first two sentences with markdown stripped. Sentences are queued
+   one utterance at a time, so speech starts as soon as the answer
+   lands and can be stopped mid-answer — long single utterances also
+   stall Chrome's engine. A period ends a sentence only when
+   whitespace follows, so "3.5" never splits.
+
+   Voices come from the Sheet's VoiceProfiles tab via each persona's
+   voice field. "Automatic" (the default) scores installed voices —
+   the persona's language first, then names containing Natural,
+   Neural, or Google, which are consistently the least robotic. A
+   saved voice that is no longer installed falls back to Automatic
+   silently rather than failing.
+
+   ECHO PROTECTION — required before any always-listening layer: the
+   mic must not hear the speaker. EchoGuard keeps a rolling buffer of
+   recently spoken sentences plus the time speech last ended; a
+   dictation transcript that closely matches the buffer, or arrives
+   inside a short grace window after speech ends, is discarded.
+   Without this the assistant hears itself and answers its own
+   answers.
+================================================================= */
+const TTS_KEY = "pa_tts_on";
+let ttsPrefs = {};
+try{ ttsPrefs = JSON.parse(localStorage.getItem(TTS_KEY) || "{}") || {}; }catch(e){}
+const ttsOn = id => !!ttsPrefs[id];
+function setTtsOn(id, on){
+  if(on) ttsPrefs[id] = true; else delete ttsPrefs[id];
+  try{ localStorage.setItem(TTS_KEY, JSON.stringify(ttsPrefs)); }catch(e){}
+}
+
+const SPOKEN_MARK = /\n?\s*===SPOKEN===\s*\n?/i;
+function splitReply(text){
+  const t = String(text);
+  const m = t.match(SPOKEN_MARK);
+  if(!m) return { written: t, spoken: null };
+  return { written: t.slice(0, m.index).trim(), spoken: t.slice(m.index + m[0].length).trim() };
+}
+/* what the bubble shows: the written half only, never the marker */
+function displayText(m){
+  if(m.role !== "assistant" || m.error) return m.content;
+  const p = splitReply(m.content);
+  return p.written || p.spoken || m.content;
+}
+function stripMarkdown(t){
+  return String(t)
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s{0,3}(?:[-*+]|\d+\.)\s+/gm, "")
+    .replace(/^\s{0,3}>\s?/gm, "")
+    .replace(/([*_]{1,3})(\S(?:[\s\S]*?\S)?)\1/g, "$2")
+    .replace(/\|/g, " ")
+    .trim();
+}
+/* a period is a sentence end only when whitespace (or the end) follows */
+function splitSentences(text){
+  const out = [];
+  const re = /([.!?]+)(?=\s|$)/g;
+  let last = 0, m;
+  while((m = re.exec(text))){
+    const s = text.slice(last, m.index + m[1].length).trim();
+    if(s) out.push(s);
+    last = re.lastIndex;
+  }
+  const rest = text.slice(last).trim();
+  if(rest) out.push(rest);
+  return out;
+}
+function spokenTextFor(reply){
+  const p = splitReply(reply);
+  if(p.spoken) return stripMarkdown(p.spoken);
+  return splitSentences(stripMarkdown(p.written)).slice(0, 2).join(" ");
+}
+
+const EchoGuard = {
+  buffer: [],                    // {text, at} — normalized recently spoken sentences
+  lastEnd: 0,
+  GRACE_MS: 1200, KEEP_MS: 30000,
+  norm(t){ return String(t).toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, " ").replace(/\s+/g, " ").trim(); },
+  noteSpoken(t){
+    const n = this.norm(t);
+    if(n) this.buffer.push({ text: n, at: Date.now() });
+    this.prune();
+  },
+  noteEnd(){ this.lastEnd = Date.now(); },
+  prune(){
+    const cut = Date.now() - this.KEEP_MS;
+    this.buffer = this.buffer.filter(e => e.at >= cut);
+  },
+  match(a, b){
+    if(a === b) return true;
+    if(a.length >= 8 && b.includes(a)) return true;
+    if(b.length >= 8 && a.includes(b)) return true;
+    const at = a.split(" "), bt = new Set(b.split(" "));
+    if(at.length < 3) return false;
+    let hit = 0;
+    at.forEach(w => { if(bt.has(w)) hit++; });
+    return hit / at.length >= 0.8;
+  },
+  isEcho(t){
+    const n = this.norm(t);
+    if(!n) return false;
+    if(Date.now() - this.lastEnd < this.GRACE_MS) return true;
+    this.prune();
+    return this.buffer.some(e => this.match(n, e.text));
+  }
+};
+
+const Speech = {
+  voices: [], queue: [], _gen: 0,
+  supported(){ return !!(window.speechSynthesis && window.SpeechSynthesisUtterance); },
+  refreshVoices(){ try{ this.voices = speechSynthesis.getVoices() || []; }catch(e){ this.voices = []; } },
+  score(v, lang){
+    let s = 0;
+    const want = (lang || "en-US").toLowerCase();
+    const have = (v.lang || "").toLowerCase();
+    if(have === want) s += 8;
+    else if(have.split("-")[0] === want.split("-")[0]) s += 5;
+    if(/natural/i.test(v.name)) s += 4;
+    if(/neural/i.test(v.name)) s += 4;
+    if(/google/i.test(v.name)) s += 3;
+    if(v.default) s += 1;
+    return s;
+  },
+  voiceFor(role){
+    const want = String(role.voice || "").trim();
+    if(want && want.toLowerCase() !== "automatic"){
+      const hit = this.voices.find(v => v.name === want);
+      if(hit) return hit;
+      /* saved voice not installed here — fall through to Automatic, silently */
+    }
+    const lang = String(role.language || "").trim() || "en-US";
+    return this.voices.slice().sort((a, b) => this.score(b, lang) - this.score(a, lang))[0] || null;
+  },
+  speakReply(role, reply){
+    const text = spokenTextFor(reply);
+    if(text) this.speak(role, text);
+  },
+  speak(role, text){
+    if(!this.supported()) return;
+    this.stop();
+    const gen = this._gen;
+    const voice = this.voiceFor(role);
+    const lang = (voice && voice.lang) || String(role.language || "").trim() || "en-US";
+    this.queue = splitSentences(text).map(s => ({ s, voice, lang }));
+    this._drain(gen);
+  },
+  _drain(gen){
+    if(gen !== this._gen || !this.queue.length) return;
+    const item = this.queue.shift();
+    const u = new SpeechSynthesisUtterance(item.s);
+    if(item.voice) u.voice = item.voice;
+    u.lang = item.lang;
+    EchoGuard.noteSpoken(item.s);
+    u.onend = u.onerror = () => { EchoGuard.noteEnd(); this._drain(gen); };
+    speechSynthesis.speak(u);
+  },
+  stop(){
+    this._gen++;
+    this.queue = [];
+    if(!this.supported()) return;
+    if(speechSynthesis.speaking || speechSynthesis.pending){
+      try{ speechSynthesis.cancel(); }catch(e){}
+      EchoGuard.noteEnd();
+    }
+  },
+  preview(role){
+    this.speak(role, "Hi — I'm the " + role.title + ". This is how replies will sound.");
+  }
+};
+
 /* ---------- thread ---------- */
 const STARTERS = [
   "What are you focused on right now?",
@@ -1363,13 +1563,13 @@ function renderThread(){
     `<div class="stamp">Today ${time}</div>` +
     `<div class="clearBar"><button data-clear>Clear conversation</button></div>` +
     t.map(m => `<div class="msg ${m.role === "user" ? "me" : "from"} ${m.error ? "err" : ""}">
-        <div class="bubble">${esc(m.content)}</div></div>`).join("") +
+        <div class="bubble">${esc(displayText(m))}</div></div>`).join("") +
     (waitingFor === r.id ? `<div class="msg from"><div class="dots"><i></i><i></i><i></i></div></div>` : "");
   box.scrollTop = box.scrollHeight;
 }
 function setTab(next){
   tab = next;
-  if(tab !== "chat") Dictation.stop();
+  if(tab !== "chat"){ Dictation.stop(); Speech.stop(); }
   $("#card").classList.toggle("chatting", tab === "chat");
   $("#tabSeg").classList.toggle("b", tab === "chat");
   $("#tabSeg").querySelectorAll("[data-tab]").forEach(b =>
@@ -1392,6 +1592,7 @@ async function sendMessage(text){
   if(Dictation.active && dictInterimLen) voiceMeta.dictated = true;
   const vm = text === input.value ? consumeVoiceMeta() : { channel:"chat" };
   discardDictation();
+  Speech.stop();
   threads[r.id] = threads[r.id] || [];
   threads[r.id].push({ role:"user", content:text.trim(), at:Date.now(), channel:vm.channel, confidence:vm.confidence });
   input.value = ""; input.style.height = "41px"; $("#send").disabled = true;
@@ -1399,6 +1600,8 @@ async function sendMessage(text){
   try{
     const reply = await Agent.reply(r, threads[r.id]);
     threads[r.id].push({ role:"assistant", content:reply, at:Date.now() });
+    /* speak only if this conversation is still the one on screen */
+    if(selectedId === r.id && tab === "chat" && ttsOn(r.id)) Speech.speakReply(r, reply);
   }catch(err){
     threads[r.id].push({
       role:"assistant", error:true, at:Date.now(),
@@ -1455,7 +1658,9 @@ function selectRole(id){
   const sel = $(".oRow.is-selected");
   if(sel) sel.scrollIntoView({block:"nearest"});
   discardDictation();
+  Speech.stop();
   refreshMic();
+  refreshSpeaker();
   const input = $("#composerInput");
   input.value = ""; input.style.height = "41px";
   input.placeholder = "Message " + r.title;
@@ -1465,6 +1670,7 @@ function selectRole(id){
 }
 function rootRole(){ return state.roles.find(r => r.parent === null) || state.roles[0]; }
 function showPane(pane){
+  if(pane === "chart") Speech.stop();
   document.body.classList.toggle("showing-chart", pane === "chart");
   const seg = $("#paneSwitch");
   seg.classList.toggle("b", pane === "chart");
@@ -1570,6 +1776,18 @@ function renderRolePane(){
   const L = r.look;
   const long = (key,label,ph) => `<div class="row col"><div class="lab">${label}</div>
     <textarea class="ta" data-role-field="${key}" placeholder="${ph}">${esc(r[key]||"")}</textarea></div>`;
+  /* an uninstalled saved voice shows as Automatic but keeps its value until
+     the user changes it, so it revives on a device that has the voice */
+  const voiceGroup = !Speech.supported() ? "" : `
+    <div class="gLabel">Voice</div>
+    <div class="group">
+      <div class="row"><span class="k">Voice<small>Used when replies are read aloud. Automatic picks the best installed voice.</small></span>
+        <select class="text" data-voice style="text-align:right;border:0;background:none;color:var(--label2);font-size:15px;max-width:52%">
+          <option value="">Automatic</option>
+          ${Speech.voices.map(v => `<option value="${esc(v.name)}" ${v.name === r.voice ? "selected" : ""}>${esc(v.name)} (${esc(v.lang)})</option>`).join("")}
+        </select></div>
+      <button class="row" data-voice-preview><span class="k" style="color:var(--accent)">Preview voice</span></button>
+    </div>`;
 
   $("#paneRole").innerHTML = `
     <div class="gLabel">Character</div>
@@ -1604,6 +1822,7 @@ function renderRolePane(){
       ${long("guardrails","Hard rules","Limits this role must never cross. Placed last in the prompt, where models weight them most.")}
       ${long("outOfScope","Out of scope","What to say when asked something this role doesn't own. Leave blank for the default handoff line.")}
     </div>
+    ${voiceGroup}
 
     <div class="gLabel">Role</div>
     <div class="group"><button class="row" data-act="delete"><span class="k" style="color:var(--danger)" id="delLabel">Remove this role</span></button></div>
@@ -1617,7 +1836,7 @@ function previewFor(r){
   const t = threads[r.id] || [];
   if(t.length){
     const last = t[t.length-1];
-    return (last.role === "user" ? "You: " : "") + clip(last.content.replace(/\s+/g," "), 46);
+    return (last.role === "user" ? "You: " : "") + clip(displayText(last).replace(/\s+/g," "), 46);
   }
   return r.task ? clip(r.task, 46) : deptOf(r).name;
 }
@@ -1728,9 +1947,10 @@ async function flushPersonaSave(){
       title:r.title || "", personality:r.personality || "", context:r.context || "",
       task:r.task || "", outcome:r.outcome || "", guardrails:r.guardrails || "",
       outOfScope:r.outOfScope || "", knowledge:(r.knowledge || []).slice(),
-      /* savePersona sends the complete persona record — leaving Language out
-         would let any brief edit blank the dictation locale in the Sheet */
+      /* savePersona sends the complete persona record — leaving Language or
+         Voice out would let any brief edit blank them in the Sheet */
       language:(r.language || "").trim(),
+      voice:(r.voice || "").trim(),
       version:r.version || 1,
       look:{ skin:r.look.skin, hair:r.look.hair, style:r.look.style, prop:r.look.prop }
     }});
@@ -1882,9 +2102,16 @@ function setDictText(insert, commit){
   renderGhost();
 }
 
-Dictation.onInterim = t => { if(!dictDiscard) setDictText(t.trim() ? spacedForInsert(t) : "", false); };
+/* an echo verdict also clears any interim words the echo already painted,
+   otherwise they'd sit in the box and commit as text when listening ends */
+Dictation.onInterim = t => {
+  if(dictDiscard) return;
+  if(EchoGuard.isEcho(t)){ if(dictInterimLen) setDictText("", false); return; }
+  setDictText(t.trim() ? spacedForInsert(t) : "", false);
+};
 Dictation.onFinal = (t, conf) => {
   if(dictDiscard || !t.trim()) return;
+  if(EchoGuard.isEcho(t)){ if(dictInterimLen) setDictText("", false); return; }
   setDictText(spacedForInsert(t), true);
   voiceMeta.dictated = true;
   if(typeof conf === "number" && conf > 0) voiceMeta.confidences.push(conf);
@@ -1920,6 +2147,26 @@ micBtn.addEventListener("click", () => {
   if(Dictation.active) Dictation.stop();
   else{ micNoticeEl.hidden = true; Dictation.start(); }
 });
+
+/* ---------- speech wiring ---------- */
+const speakBtn = $("#speakBtn");
+function refreshSpeaker(){
+  speakBtn.hidden = !Speech.supported();
+  const on = ttsOn(selectedId);
+  speakBtn.classList.toggle("on", on);
+  speakBtn.setAttribute("aria-pressed", String(on));
+}
+speakBtn.addEventListener("click", () => {
+  const on = !ttsOn(selectedId);
+  setTtsOn(selectedId, on);
+  if(!on) Speech.stop();
+  refreshSpeaker();
+});
+if(Speech.supported()){
+  Speech.refreshVoices();
+  /* voices arrive asynchronously in Chrome */
+  speechSynthesis.onvoiceschanged = () => Speech.refreshVoices();
+}
 $("#cog").addEventListener("click", () => openSettings());
 $("#done").addEventListener("click", closeSettings);
 $("#back").addEventListener("click", () => { renderMain(); goDeep(false); });
@@ -1976,6 +2223,7 @@ $("#paneRole").addEventListener("click", e => {
   const rm = t.closest("[data-chip-remove]");
   if(rm){ r.knowledge.splice(+rm.dataset.chipRemove, 1); touchRole(r); renderRolePane(); refreshAfterEdit(); return; }
   if(t.closest("[data-chip-add]")){ addChip(); return; }
+  if(t.closest("[data-voice-preview]")){ Speech.preview(r); return; }
   if(t.closest('[data-act="delete"]')) deleteRole();
 });
 $("#paneRole").addEventListener("input", e => {
@@ -1991,7 +2239,9 @@ $("#paneRole").addEventListener("input", e => {
 $("#paneRole").addEventListener("change", e => {
   const r = roleById(editingId); if(!r) return;
   const sel = e.target.closest('[data-look="dept"]');
-  if(sel){ r.dept = sel.value; touchRole(r); renderRolePane(); refreshAfterEdit(); }
+  if(sel){ r.dept = sel.value; touchRole(r); renderRolePane(); refreshAfterEdit(); return; }
+  const v = e.target.closest("[data-voice]");
+  if(v){ r.voice = v.value; touchRole(r); }
 });
 $("#paneRole").addEventListener("keydown", e => {
   if(e.key === "Enter" && e.target.id === "chipInput"){ e.preventDefault(); addChip(); }
