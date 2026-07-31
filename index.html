@@ -507,6 +507,12 @@ body.no-motion .spinner{animation-duration:1.6s}
 }
 .dictGhost[hidden]{display:none}
 .dictGhost .int{color:var(--label3);background:var(--field);border-radius:3px}
+/* low-confidence commits: glyphs stay transparent (the textarea shows them) —
+   only the dotted underline paints, so the flag never doubles the text */
+.dictGhost .lowc{
+  text-decoration:underline dotted color-mix(in srgb,var(--danger) 55%,var(--label3));
+  text-decoration-thickness:1.5px;text-underline-offset:3px;
+}
 .mic{
   width:34px;height:34px;border-radius:50%;background:var(--field);color:var(--label2);
   display:grid;place-items:center;flex:none;margin-bottom:4px;position:relative;
@@ -531,6 +537,8 @@ body.no-motion .spinner{animation-duration:1.6s}
   font-size:12.5px;line-height:1.4;color:var(--danger);text-align:center;
 }
 .micNotice[hidden]{display:none}
+.micNotice.info{color:var(--label2)}
+.micNotice button{color:var(--accent);font-weight:600;font-size:12.5px;margin-left:6px}
 .vh{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
 .send{
   width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;
@@ -572,6 +580,7 @@ body.no-motion .spinner{animation-duration:1.6s}
 .ambientBand[hidden]{display:none}
 .ambientDot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none;animation:ambPulse 1.6s ease-in-out infinite}
 .ambientDot.busy{background:#F08C00}
+.ambientDot.dead{background:var(--danger);animation:none}
 @keyframes ambPulse{0%,100%{opacity:.4}50%{opacity:1}}
 .ambientTxt{flex:1;min-width:0;display:flex;gap:6px;align-items:baseline}
 .ambientTxt b{font-size:12px;flex:none}
@@ -590,6 +599,20 @@ body.no-motion .spinner{animation-duration:1.6s}
 .ambRow .t{flex:1;min-width:0;color:var(--label)}
 .ambRow small{display:block;color:var(--label3)}
 body.no-motion .ambientDot,body.no-motion .speak.pulse::after{animation:none}
+
+/* ---------- voice accuracy ---------- */
+.vtBig{display:flex;gap:14px;padding:14px}
+.vtBig .cell{flex:1;text-align:center}
+.vtBig .num{font-size:23px;font-weight:700;letter-spacing:-.02em}
+.vtBig .lbl{font-size:10.5px;color:var(--label3);margin-top:3px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.vtRow{display:flex;gap:10px;align-items:flex-start;padding:10px 14px;border-bottom:.5px solid var(--sep);font-size:13.5px;line-height:1.4}
+.vtRow:last-child{border-bottom:0}
+.vtRow .ico{flex:none;width:20px;text-align:center;font-weight:700;color:var(--label3)}
+.vtRow.ok .ico{color:#28A745}
+.vtRow.bad .ico{color:var(--danger)}
+.vtRow.run .ico{color:var(--accent)}
+.vtRow .tx{flex:1;min-width:0}
+.vtRow small{display:block;color:var(--label3);margin-top:1px;overflow-wrap:anywhere}
 
 /* ---------- history ---------- */
 .sheet.history{height:min(680px,calc(100dvh - 120px))}
@@ -854,11 +877,18 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
 const SHEET_ENDPOINT = "https://script.google.com/macros/s/AKfycbzowjBwMMSEWcDHW7Z94Ga-57iacv8tOoirSQp4hGJBshvUnWrnn7thKwvzCvmk9_mM/exec";
 const TOKEN_KEY = "pa_token";
 
-/* Correction pass for dictated text: case-insensitive whole-word replacements
-   applied to every final transcript before it reaches the composer. General
-   speech engines reliably mangle company and product names — this map is what
-   makes dictation feel accurate here, so keep it current. It can later be
-   loaded from the Sheet instead of living in this file. */
+/* Correction pass for dictated text, applied to every final transcript before
+   it reaches the composer. Speech-to-text errors are rarely literal, so
+   matching is fuzzy: whitespace- and hyphen-tolerant, case-insensitive, and
+   (for keys long enough to be unambiguous) within a small edit distance —
+   "config manager", "configmanager" and "config-manager" all correct. Matches
+   only ever cover whole words and never reach across a sentence boundary, so
+   a correction can't change the meaning of surrounding text. Short keys stay
+   exact-only: one edit on a three-letter key would swallow real words.
+
+   VOICE_CORRECTIONS seeds the map; when the Sheet's config carries a
+   VocabularyFixes table it is merged on top in applyConfig(), so the Sheet
+   owns the vocabulary once connected. */
 const VOICE_CORRECTIONS = {
   "north wind": "Northwind",
   "arr": "ARR",
@@ -866,10 +896,189 @@ const VOICE_CORRECTIONS = {
   "m s a": "MSA",
   "d p a": "DPA"
 };
-const CORRECTION_RULES = Object.keys(VOICE_CORRECTIONS)
-  .sort((a, b) => b.length - a.length)
-  .map(k => [new RegExp("\\b" + k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "gi"), VOICE_CORRECTIONS[k]]);
-const correctTranscript = t => CORRECTION_RULES.reduce((s, [re, out]) => s.replace(re, out), t);
+const escRe = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const normWords = s => String(s).toLowerCase().replace(/[\s-]+/g, " ").trim();
+let VOCAB_RULES = [];
+let vocabGen = 0;
+const lexCache = new Map();
+function compileVocab(map){
+  vocabGen++;
+  lexCache.clear();
+  VOCAB_RULES = Object.keys(map || {}).filter(k => k && map[k]).map(k => {
+    const key = String(k), value = String(map[k]);
+    const tokens = normWords(key).split(" ");
+    const joined = tokens.join("");
+    return {
+      key, value, tokens, joined,
+      /* how many edits a fuzzy match may spend; 0 = exact forms only */
+      allow: joined.length >= 10 ? 2 : joined.length >= 5 ? 1 : 0,
+      re: new RegExp("\\b" + escRe(key).replace(/\s+/g, "[\\s-]+") + "\\b", "gi")
+    };
+  }).sort((a, b) => b.joined.length - a.joined.length);
+}
+compileVocab(VOICE_CORRECTIONS);
+/* rows from the Sheet arrive in whatever shape the tab grew into — accept a
+   plain object, [wrong, right] pairs, or {wrong, right}-ish records */
+function parseVocabConfig(cfg){
+  const src = cfg.vocabularyFixes || cfg.vocabulary_fixes || cfg.vocabulary ||
+    (cfg.settings && (cfg.settings.vocabularyFixes || cfg.settings.vocabulary_fixes));
+  const out = {};
+  const put = (k, v) => { k = String(k || "").trim(); v = String(v || "").trim(); if(k && v) out[k] = v; };
+  if(Array.isArray(src)) src.forEach(row => {
+    if(Array.isArray(row)) put(row[0], row[1]);
+    else if(row && typeof row === "object")
+      put(row.wrong || row.from || row.heard || row.key, row.right || row.to || row.correct || row.value);
+  });
+  else if(src && typeof src === "object") Object.keys(src).forEach(k => put(k, src[k]));
+  return out;
+}
+function editDistance(a, b){
+  if(a === b) return 0;
+  const m = a.length, n = b.length;
+  if(!m) return n; if(!n) return m;
+  let prev = Array.from({length: n + 1}, (_, j) => j);
+  for(let i = 1; i <= m; i++){
+    const cur = [i];
+    for(let j = 1; j <= n; j++)
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[n];
+}
+/* words with their offsets in the original string; `core` is the comparable
+   form (surrounding punctuation stripped, lowercased, hyphens/apostrophes
+   removed) and coreStart/coreEnd bound exactly the replaceable span */
+function tokenizeWithOffsets(t){
+  const out = [], re = /\S+/g;
+  let m;
+  while((m = re.exec(t))){
+    const raw = m[0];
+    const lead = (raw.match(/^[^\p{L}\p{N}]+/u) || [""])[0].length;
+    const trail = (raw.match(/[^\p{L}\p{N}]+$/u) || [""])[0].length;
+    const core = raw.slice(lead, raw.length - trail);
+    if(!core) continue;
+    out.push({
+      raw,
+      core: core.toLowerCase().replace(/[-'’]/g, ""),
+      coreStart: m.index + lead,
+      coreEnd: m.index + raw.length - trail
+    });
+  }
+  return out;
+}
+function correctTranscript(text){
+  let t = String(text);
+  /* pass 1: exact forms, tolerant of spaces vs hyphens */
+  VOCAB_RULES.forEach(r => { t = t.replace(r.re, r.value); });
+  /* pass 2: fuzzy — slide whole-word windows near the key's word count and
+     accept small edit distance on the joined form */
+  const toks = tokenizeWithOffsets(t);
+  const used = new Array(toks.length).fill(false);
+  const repl = [];
+  VOCAB_RULES.forEach(r => {
+    if(!r.allow) return;
+    for(let w = Math.max(1, r.tokens.length - 1); w <= r.tokens.length + 1; w++){
+      for(let i = 0; i + w <= toks.length; i++){
+        let busy = false;
+        for(let k = i; k < i + w; k++) if(used[k]){ busy = true; break; }
+        if(busy) continue;
+        /* a window may not straddle a sentence boundary */
+        if(w > 1){
+          let cut = false;
+          for(let k = i; k < i + w - 1; k++) if(/[.!?]$/.test(toks[k].raw)){ cut = true; break; }
+          if(cut) continue;
+        }
+        const cand = toks.slice(i, i + w).map(x => x.core).join("");
+        if(!cand || Math.abs(cand.length - r.joined.length) > r.allow) continue;
+        if(cand[0] !== r.joined[0]) continue;   // first letter must agree — cheap false-positive guard
+        if(editDistance(cand, r.joined) > r.allow) continue;
+        const s = toks[i].coreStart, e = toks[i + w - 1].coreEnd;
+        if(t.slice(s, e) === r.value) continue;  // already the corrected form
+        repl.push({ s, e, v: r.value });
+        for(let k = i; k < i + w; k++) used[k] = true;
+      }
+    }
+  });
+  repl.sort((a, b) => b.s - a.s).forEach(x => { t = t.slice(0, x.s) + x.v + t.slice(x.e); });
+  return t;
+}
+
+/* =================================================================
+   N-BEST SELECTION — the engine computes several candidate
+   transcripts per final result; reading only the first discards the
+   rest. Every candidate is scored against the persona's vocabulary:
+     +3 for each vocabulary term it contains (corrected forms from
+        the fixes map, the persona's Title, its department name, and
+        capitalised multi-word terms from its Context and Task)
+     +1 × the engine's own confidence
+     −2 for each term the vocabulary maps AWAY from (a known
+        mis-hearing like "north wind")
+   The highest scorer wins, not the first. Wins by an index other
+   than 0 are counted and logged so the benefit stays measurable —
+   the Voice accuracy panel in Settings shows the tally.
+================================================================= */
+const PickStats = { finals: 0, nonTop: 0 };
+const wordRe = t => new RegExp("\\b" + escRe(String(t).trim()).replace(/\s+/g, "\\s+") + "\\b", "i");
+const CAPS_TERM = /\b[A-Z][A-Za-z0-9'’-]*(?:\s+[A-Z][A-Za-z0-9'’-]*)+/g;
+function roleLexicon(role){
+  const key = role.id + "|" + (role.version || 1) + "|" + role.dept + "|" + vocabGen;
+  const hit = lexCache.get(key);
+  if(hit) return hit;
+  const terms = new Set();
+  VOCAB_RULES.forEach(r => terms.add(r.value));
+  if(role.title) terms.add(String(role.title).trim());
+  const d = deptOf(role);
+  if(d.name) terms.add(d.name);
+  (String(role.context || "") + "\n" + String(role.task || "")).replace(CAPS_TERM, t => { terms.add(t.trim()); return t; });
+  const away = VOCAB_RULES.filter(r => normWords(r.key) !== normWords(r.value)).map(r => r.key);
+  const lex = {
+    terms: [...terms].filter(Boolean).map(t => ({ t, re: wordRe(t) })),
+    away: away.map(t => ({ t, re: wordRe(t) }))
+  };
+  if(lexCache.size > 64) lexCache.clear();
+  lexCache.set(key, lex);
+  return lex;
+}
+function pickAlternative(alts, role){
+  if(!alts || !alts.length) return { transcript: "", confidence: null, index: 0 };
+  const lex = role ? roleLexicon(role) : { terms: [], away: [] };
+  let best = null;
+  alts.forEach((a, i) => {
+    let s = typeof a.confidence === "number" ? a.confidence : 0;
+    lex.terms.forEach(term => { if(term.re.test(a.transcript)) s += 3; });
+    lex.away.forEach(term => { if(term.re.test(a.transcript)) s -= 2; });
+    if(!best || s > best.score) best = { score: s, index: i, transcript: a.transcript, confidence: a.confidence };
+  });
+  PickStats.finals++;
+  if(best.index > 0){
+    PickStats.nonTop++;
+    console.info("[voice] alternative " + (best.index + 1) + " of " + alts.length + " won: \"" + best.transcript.trim() + "\"");
+  }
+  return best;
+}
+
+/* word error rate, for the Voice accuracy panel: word-level edit distance
+   over the reference length, both sides normalised (lowercase, punctuation
+   stripped) so capitalisation never counts as an error */
+const werTokens = s => String(s).toLowerCase().replace(/[^\p{L}\p{N}'’ ]+/gu, " ")
+  .replace(/['’]/g, "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+function wordEditDistance(a, b){
+  const m = a.length, n = b.length;
+  if(!m) return n; if(!n) return m;
+  let prev = Array.from({length: n + 1}, (_, j) => j);
+  for(let i = 1; i <= m; i++){
+    const cur = [i];
+    for(let j = 1; j <= n; j++)
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[n];
+}
+function wer(expected, heard){
+  const e = werTokens(expected), h = werTokens(heard);
+  if(!e.length) return h.length ? 1 : 0;
+  return Math.min(1, wordEditDistance(e, h) / e.length);
+}
 
 const DEFAULT_DEPTS = {
   exec:      { name:"Executive",        tint:"#5A5A60" },
@@ -1131,6 +1340,9 @@ function applyConfig(cfg){
   };
   rebuildDepts(state.roles);
   normalizeRoles();
+  /* the Sheet's VocabularyFixes ride the config; merged over the built-ins
+     so the Sheet owns the vocabulary once connected */
+  compileVocab(Object.assign({}, VOICE_CORRECTIONS, parseVocabConfig(cfg)));
 }
 
 /* ========== the mark ==========
@@ -1310,8 +1522,26 @@ function applyChrome(){
        promptVersion, personaVersion, temperature, webSearch,
        messages:[{role,content}] }        -> { "reply": "text" }
      { action:"classify", roleId, roleTitle, company, task, context,
-       utterance, recent, instruction }   -> { needs_answer, normalized_question,
+       utterance, transcriptConfidence,
+       recent, instruction }              -> { needs_answer, normalized_question,
                                               confidence, topic, reason }
+     { action:"cleanup", roleId, language, transcript,
+       vocabulary:[...], instruction }    -> { "text": "cleaned transcript" }
+     { action:"voiceTests" }              -> { tests:[{id, phrase, expected}] }
+     { action:"voiceTestResult", result:{ testId, transcript,
+       rawTranscript, alternativeUsed, confidence, result, runAt } }
+                                          -> { ok:true }
+
+   cleanup runs on the cheap model: punctuation, capitalisation and
+   vocabulary correction only, per the instruction sent verbatim.
+   The app treats ANY cleanup failure — error, timeout past 2s, or a
+   reply that rewrites rather than punctuates — as "keep the raw
+   transcript", so the handler can be minimal. voiceTests reads the
+   VoiceTests tab (TestId, Phrase, ExpectedTranscript); a server
+   without it just means the app falls back to its built-in phrase
+   list. voiceTestResult writes one accuracy run back to that tab's
+   LastTranscript / LastAlternativeUsed / LastConfidence /
+   LastResult / LastRunAt columns, best-effort.
 
    webSearch asks the server to let the model search the web while
    answering. When a chat call fails, the app retries the same
@@ -1475,6 +1705,16 @@ const Agent = {
    default. To add a hosted transcription service later, register a
    second entry in SPEECH_ENGINES with the same callback contract and
    name it in the Sheet; nothing in the button or composer changes.
+
+   Callback contract: interim(text) with the current provisional
+   text; final(alternatives) with EVERY candidate the engine
+   computed, as [{transcript, confidence}] best-first — callers pick
+   with pickAlternative(), never blindly [0]; error(code); end().
+   The returned handle exposes stop() (graceful), abort() (drop the
+   instance immediately — used on a wedged engine, where a new
+   instance is then constructed rather than restarting the dead
+   one), plus startedAt / gotStart / gotResult so watchdogs can tell
+   a listening engine from one that silently never started.
 ================================================================= */
 const SPEECH_ENGINES = {
   browser_native: {
@@ -1484,13 +1724,29 @@ const SPEECH_ENGINES = {
       const rec = new SR();
       rec.continuous = true;
       rec.interimResults = true;
-      rec.maxAlternatives = 1;
+      rec.maxAlternatives = 5;   // Chrome computes these either way; reading one wastes the rest
       rec.lang = lang;
+      const handle = {
+        startedAt: Date.now(), gotStart: false, gotResult: false,
+        stop(){ try{ rec.stop(); }catch(e){} },
+        abort(){ try{ rec.abort(); }catch(e){} }
+      };
+      rec.onstart = () => { handle.gotStart = true; };
+      rec.onaudiostart = () => { handle.gotStart = true; };
       rec.onresult = e => {
+        handle.gotResult = true;
         let interim = "";
         for(let i = e.resultIndex; i < e.results.length; i++){
           const res = e.results[i];
-          if(res.isFinal) cb.final(res[0].transcript, typeof res[0].confidence === "number" ? res[0].confidence : null);
+          if(res.isFinal){
+            const alts = [];
+            for(let j = 0; j < res.length; j++){
+              const a = res[j];
+              if(a && a.transcript && a.transcript.trim())
+                alts.push({ transcript: a.transcript, confidence: typeof a.confidence === "number" ? a.confidence : null });
+            }
+            if(alts.length) cb.final(alts);
+          }
           else interim += res[0].transcript;
         }
         cb.interim(interim);
@@ -1498,7 +1754,7 @@ const SPEECH_ENGINES = {
       rec.onerror = e => cb.error(e.error || "unknown");
       rec.onend = () => cb.end();
       rec.start();
-      return { stop(){ try{ rec.stop(); }catch(e){} } };
+      return handle;
     }
   }
 };
@@ -1513,7 +1769,7 @@ const DICTATION_ERRORS = {
 
 const Dictation = {
   active: false,
-  _session: null, _silence: null, _erred: false,
+  _session: null, _silence: null, _watch: null, _erred: false,
   onInterim: null, onFinal: null, onState: null, onError: null,
   engine(){
     const key = (state.settings && state.settings.speech_to_text_provider) || "browser_native";
@@ -1526,6 +1782,7 @@ const Dictation = {
     const r = roleById(dictTarget.roleId || selectedId);
     return (r && String(r.language || "").trim()) || "en-US";
   },
+  role(){ return roleById(dictTarget.roleId || selectedId); },
   start(){
     if(this.active || !this.supported()) return;
     this.active = true; this._erred = false;
@@ -1533,7 +1790,11 @@ const Dictation = {
     try{
       this._session = this.engine().start(this.lang(), {
         interim: t => { this._poke(); this.onInterim && this.onInterim(t); },
-        final: (t, conf) => { this._poke(); this.onFinal && this.onFinal(correctTranscript(t), conf); },
+        final: alts => {
+          this._poke();
+          const pick = pickAlternative(alts, this.role());
+          this.onFinal && this.onFinal(correctTranscript(pick.transcript), pick.confidence, pick.index);
+        },
         error: code => {
           if(code === "aborted") return;               // deliberate stop — stay silent
           this._erred = true;
@@ -1541,6 +1802,21 @@ const Dictation = {
         },
         end: () => this._finish()
       });
+      /* watchdog: Chrome can accept start() and then never fire a single
+         event. A session with no start signal after 7s is wedged — abort the
+         instance (a later start constructs a fresh one) and say so, so a dead
+         microphone is never silent. */
+      clearInterval(this._watch);
+      this._watch = setInterval(() => {
+        const s = this._session;
+        if(!s) return;
+        if(!s.gotStart && Date.now() - s.startedAt > 7000){
+          this._erred = true;
+          this.onError && this.onError("The microphone isn't responding — dictation stopped. Try again.");
+          s.abort();
+          this._finish();
+        }
+      }, 2000);
     }catch(e){
       this._erred = true;
       this.onError && this.onError("Dictation couldn't start — try again.");
@@ -1555,6 +1831,7 @@ const Dictation = {
   },
   _finish(){
     clearTimeout(this._silence);
+    clearInterval(this._watch); this._watch = null;
     this._session = null;
     if(!this.active) return;
     this.active = false;
@@ -1583,12 +1860,17 @@ const Dictation = {
    silently rather than failing.
 
    ECHO PROTECTION — required before any always-listening layer: the
-   mic must not hear the speaker. EchoGuard keeps a rolling buffer of
-   recently spoken sentences plus the time speech last ended; a
-   dictation transcript that closely matches the buffer, or arrives
-   inside a short grace window after speech ends, is discarded.
-   Without this the assistant hears itself and answers its own
-   answers.
+   mic must not hear the speaker. The first line of defence is not to
+   listen at all: while TTS speaks, the recogniser is paused outright
+   (ambient suspends and resumes ~600ms after the last utterance;
+   an active dictation session is stopped, since the assistant
+   talking over it would pollute the transcript anyway). Filtering
+   can't catch a paraphrase; not transcribing can't miss one.
+   EchoGuard stays as the second line, for audio that still arrives
+   through speakers: it keeps a rolling buffer of recently spoken
+   sentences plus the time speech last ended; a transcript that
+   closely matches the buffer, or arrives inside a short grace
+   window after speech ends, is discarded.
 ================================================================= */
 const TTS_KEY = "pa_tts_on";
 let ttsPrefs = {};
@@ -1741,11 +2023,20 @@ const Speech = {
     const voice = this.voiceFor(role);
     const lang = (voice && voice.lang) || String(role.language || "").trim() || "en-US";
     this.queue = splitSentences(text).map(s => ({ s, voice, lang, roleId: role.id }));
+    if(this.queue.length) this._holdMic();
     this._drain(gen);
   },
+  /* the recogniser never runs while we speak: ambient pauses for the whole
+     queue, and a live dictation session is stopped rather than left to
+     transcribe our own voice */
+  _holdMic(){
+    Ambient.pauseForSpeech();
+    if(Dictation.active) Dictation.stop();
+  },
+  _releaseMic(){ Ambient.resumeAfterSpeech(); },
   _drain(gen){
     if(gen !== this._gen) return;
-    if(!this.queue.length){ VoiceState.clear("speaking"); return; }
+    if(!this.queue.length){ VoiceState.clear("speaking"); this._releaseMic(); return; }
     const item = this.queue.shift();
     const u = new SpeechSynthesisUtterance(item.s);
     if(item.voice) u.voice = item.voice;
@@ -1761,6 +2052,7 @@ const Speech = {
     this._gen++;
     this.queue = [];
     VoiceState.clear("speaking");
+    this._releaseMic();
     if(!this.supported()) return;
     if(speechSynthesis.speaking || speechSynthesis.pending){
       try{ speechSynthesis.cancel(); }catch(e){}
@@ -1954,7 +2246,7 @@ async function sendTo(roleId, text, src){
 function sendMessage(text){
   sendTo(selectedId, text, {
     input: $("#composerInput"),
-    reset(){ $("#composerInput").style.height = "41px"; }
+    reset(){ $("#composerInput").style.height = "41px"; clearMainGhost(); }
   });
 }
 
@@ -2015,6 +2307,7 @@ function selectRole(id){
   renderAmbient();
   const input = $("#composerInput");
   input.value = ""; input.style.height = "41px";
+  clearMainGhost();
   input.placeholder = "Message " + r.title;
   setTab(tab);
   if(innerWidth <= 900) showPane("chat");
@@ -2110,6 +2403,11 @@ function renderMain(){
       <div class="row"><span class="k" style="font-size:14px;color:var(--label2)">Status<small id="epStatus">${connStatusText()}</small></span></div>
     </div>
     <p class="footNote">The token stays in this browser (<code>localStorage</code>) and unlocks your Sheet's web app — personas and settings load from there once it's set. Keep the Anthropic key in Script Properties, never in this page.</p>
+
+    <div class="gLabel">Voice</div>
+    <div class="group">
+      <button class="row" data-act="voicetest"><span class="k">Voice accuracy<small>Reads test phrases aloud for you to repeat and measures word error rate against the expected text.</small></span>${CHEV}</button>
+    </div>
 
     <div class="gLabel">Configuration</div>
     <div class="group">
@@ -2225,19 +2523,21 @@ function closePicker(){
 
 /* ========== settings plumbing ========== */
 function openSettings(roleId){
+  VoiceTest.leave();   // a role pane render must never land under the voice pane's flag
   renderMain();
   if(roleId){ editingId = roleId; renderRolePane(); goDeep(true); } else { goDeep(false); }
   $("#sheet").classList.add("on");
   $("#scrim").classList.add("on");
 }
 function closeSettings(){
+  VoiceTest.leave();
   $("#sheet").classList.remove("on");
   $("#scrim").classList.remove("on");
 }
 function goDeep(deep){
   $("#panes").classList.toggle("deep", deep);
   $("#back").hidden = !deep;
-  if(!deep){ $("#sheetTitle").textContent = "Settings"; editingId = null; $("#paneMain").scrollTop = 0; }
+  if(!deep){ VoiceTest.leave(); $("#sheetTitle").textContent = "Settings"; editingId = null; $("#paneMain").scrollTop = 0; }
   else $("#paneRole").scrollTop = 0;
 }
 function refreshAfterEdit({chart=true, card=true, main=false, pane=false} = {}){
@@ -2378,12 +2678,15 @@ $("#composerInput").addEventListener("input", e => {
   el.style.height = Math.min(el.scrollHeight, 124) + "px";
   refreshSendUI();
   /* manual typing while dictating: keep every keystroke, move the insertion
-     point to the caret, and let the next result land there */
+     point to the caret, and let the next result land there. Any manual edit
+     also retires the low-confidence underlines — their offsets no longer
+     match, and the user is reviewing the text anyway. */
   if(Dictation.active && dictTarget.main){
     dictAnchor = el.selectionStart ?? el.value.length;
     dictInterimLen = 0;
+    dictLowSpans = [];
     renderGhost();
-  }
+  }else if(dictLowSpans.length) clearMainGhost();
   if(!el.value.trim() && (!voiceMeta.target || voiceMeta.target === el)) resetVoiceMeta();
 });
 $("#composerInput").addEventListener("keydown", e => {
@@ -2400,6 +2703,19 @@ const micBtn = $("#mic"), micNoticeEl = $("#micNotice"), micStatusEl = $("#micSt
 const voiceMeta = { dictated:false, confidences:[], target:null };
 let dictAnchor = 0, dictInterimLen = 0, dictDiscard = false;
 let micNoticeTimer = null, micFlashTimer = null;
+/* Final results committed below this confidence get a dotted underline in the
+   main composer's ghost, so the eye goes straight to what is likely wrong.
+   Flag only — never a block. Spans are offsets into the composer value; any
+   manual edit clears them rather than trying to remap around it, because a
+   misplaced underline is worse than none. */
+const LOW_CONF = 0.6;
+let dictLowSpans = [];
+function clearMainGhost(){
+  dictLowSpans = [];
+  if(!(Dictation.active && dictTarget.main && dictInterimLen)){
+    ghostEl.hidden = true; ghostEl.textContent = "";
+  }
+}
 
 /* Dictation writes into exactly one composer at a time. The main composer and
    the pop-out each provide a target with the same shape; whichever mic
@@ -2431,12 +2747,15 @@ function consumeVoiceMeta(){
    session was dictating into no longer exists (send, role switch) */
 function discardDictation(){
   if(Dictation.active){ dictDiscard = true; Dictation.stop(); }
+  Cleanup.gen++;   // a pending cleanup reply must not land in a recycled composer
   resetVoiceMeta();
   dictAnchor = 0; dictInterimLen = 0;
+  dictLowSpans = [];
   if(dictTarget.ghost){ dictTarget.ghost.hidden = true; dictTarget.ghost.textContent = ""; }
 }
 function micNotice(msg){
   clearTimeout(micNoticeTimer);
+  micNoticeEl.className = "micNotice";
   micNoticeEl.textContent = msg;
   micNoticeEl.hidden = false;
   micNoticeTimer = setTimeout(() => { micNoticeEl.hidden = true; }, 4500);
@@ -2447,16 +2766,32 @@ function syncComposer(){
   el.style.height = Math.min(el.scrollHeight, 124) + "px";
   refreshSendUI();
 }
-/* The ghost mirrors the textarea so the interim range can render lighter:
-   committed text is transparent (the textarea shows it), the interim span
-   paints over its own glyphs in a lighter color. */
+/* The ghost mirrors the textarea so ranges can be styled where a textarea
+   can't: committed text is transparent (the textarea shows it), the interim
+   span paints over its own glyphs in a lighter color, and low-confidence
+   committed spans draw only a dotted underline (their glyphs stay
+   transparent — the decoration has its own color). The ghost persists after
+   dictation ends while underlines remain, and clears on edit, send, cleanup,
+   or persona switch. */
 function renderGhost(){
   const g = dictTarget.ghost;
   if(!g) return;
   const el = dictTarget.input;
-  if(!dictInterimLen){ g.hidden = true; g.textContent = ""; return; }
+  const spans = dictTarget.main ? dictLowSpans : [];
+  if(!dictInterimLen && !spans.length){ g.hidden = true; g.textContent = ""; return; }
   const v = el.value;
-  g.innerHTML = `<span>${esc(v.slice(0, dictAnchor))}</span><span class="int">${esc(v.slice(dictAnchor, dictAnchor + dictInterimLen))}</span><span>${esc(v.slice(dictAnchor + dictInterimLen))}</span>`;
+  const marks = spans.filter(s => s.start < s.end && s.end <= v.length)
+    .map(s => ({ s: s.start, e: s.end, c: "lowc" }));
+  if(dictInterimLen) marks.push({ s: dictAnchor, e: dictAnchor + dictInterimLen, c: "int" });
+  marks.sort((a, b) => a.s - b.s);
+  let html = "", at = 0;
+  marks.forEach(m => {
+    if(m.s < at || m.e > v.length) return;
+    html += esc(v.slice(at, m.s)) + `<span class="${m.c}">` + esc(v.slice(m.s, m.e)) + "</span>";
+    at = m.e;
+  });
+  html += esc(v.slice(at));
+  g.innerHTML = html;
   g.hidden = false;
   g.scrollTop = el.scrollTop;
 }
@@ -2478,6 +2813,102 @@ function setDictText(insert, commit){
   renderGhost();
 }
 
+/* =================================================================
+   CLEANUP — one cheap-model pass over a finished dictation.
+   Web Speech returns unpunctuated run-on text; when a dictation
+   session ends with a draft still in the composer, one bounded call
+   (action:"cleanup", 2s ceiling) asks the server for punctuation,
+   capitalisation, and vocabulary correction ONLY — explicitly no
+   rewriting, summarising, or added/removed content. The reply
+   replaces the draft only if the draft hasn't changed meanwhile and
+   only if it still reads as the same words (a word-distance gate
+   refuses a rewrite the instruction should have prevented), with an
+   Undo affordance that restores the raw text. Any failure or
+   slowness keeps the raw transcript and moves on — this never
+   blocks sending.
+================================================================= */
+const CLEANUP_TIMEOUT_MS = 2000;
+const Cleanup = {
+  gen: 0,
+  run(target){
+    const input = target.input;
+    if(!input || !getToken()) return;
+    const raw = input.value;
+    if(!raw.trim()) return;
+    const role = roleById(target.roleId || selectedId);
+    if(!role) return;
+    const gen = ++this.gen;
+    const lex = roleLexicon(role);
+    const vocabulary = [...new Set([].concat(
+      VOCAB_RULES.map(r => r.value),
+      lex.terms.map(x => x.t)
+    ))].slice(0, 40);
+    sheetCall({
+      action: "cleanup",
+      roleId: role.id,
+      language: String(role.language || "").trim() || "en-US",
+      transcript: raw,
+      vocabulary,
+      instruction: "Add punctuation and capitalisation to this dictated transcript, and correct words only where they clearly match the vocabulary list. Never rewrite, rephrase, summarise, or add or remove content — every word stays unless it is a vocabulary correction. Return only the corrected text."
+    }, { timeoutMs: CLEANUP_TIMEOUT_MS })
+    .then(data => {
+      if(gen !== this.gen || Dictation.active) return;
+      const text = String((data && (data.text || data.reply || data.result)) || "").trim();
+      if(!text || text === raw) return;
+      if(input.value !== raw) return;                 // edited or sent while we waited
+      const rawToks = werTokens(raw);
+      if(wordEditDistance(rawToks, werTokens(text)) > Math.max(2, Math.ceil(rawToks.length * 0.3))) return;
+      if(target.main) dictLowSpans = remapLowSpans(dictLowSpans, raw, text);
+      input.value = text;
+      target.sync();
+      if(target.main) renderGhost();
+      this.offerUndo(target, raw, text);
+    })
+    .catch(() => {});   // the raw text stands; dictation never waits on this
+  },
+  offerUndo(target, raw, cleaned){
+    const undo = () => {
+      const input = target.input;
+      if(input && input.value === cleaned){
+        input.value = raw;
+        if(target.main) clearMainGhost();
+        target.sync();
+      }
+    };
+    const wire = (el, after) => {
+      el.innerHTML = `Tidied punctuation and vocabulary. <button type="button">Undo</button>`;
+      el.hidden = false;
+      el.querySelector("button").addEventListener("click", () => { undo(); el.hidden = true; after && after(); });
+    };
+    if(target.main){
+      clearTimeout(micNoticeTimer);
+      micNoticeEl.className = "micNotice info";
+      wire(micNoticeEl, () => { micNoticeEl.className = "micNotice"; });
+      micNoticeTimer = setTimeout(() => { micNoticeEl.hidden = true; micNoticeEl.className = "micNotice"; }, 8000);
+    }else if(PopOut.win && target === PopOut.dict){
+      wire(PopOut.els.notice);
+      clearTimeout(PopOut._nT);
+      PopOut._nT = setTimeout(() => { if(PopOut.els) PopOut.els.notice.hidden = true; }, 8000);
+    }
+  }
+};
+/* best-effort: carry each underline over to the cleaned text by finding its
+   words again; a span whose words the cleanup reshaped just drops its flag */
+function remapLowSpans(spans, raw, cleaned){
+  const low = cleaned.toLowerCase();
+  let from = 0;
+  const out = [];
+  spans.forEach(s => {
+    const needle = raw.slice(s.start, s.end).trim().toLowerCase();
+    if(!needle) return;
+    const i = low.indexOf(needle, from);
+    if(i < 0) return;
+    out.push({ start: i, end: i + needle.length });
+    from = i + needle.length;
+  });
+  return out;
+}
+
 /* an echo verdict also clears any interim words the echo already painted,
    otherwise they'd sit in the box and commit as text when listening ends */
 Dictation.onInterim = t => {
@@ -2488,7 +2919,16 @@ Dictation.onInterim = t => {
 Dictation.onFinal = (t, conf) => {
   if(dictDiscard || !t.trim()) return;
   if(EchoGuard.isEcho(t)){ if(dictInterimLen) setDictText("", false); return; }
-  setDictText(spacedForInsert(t), true);
+  const ins = spacedForInsert(t);
+  const at = dictAnchor;
+  setDictText(ins, true);
+  /* flag, never block: a low-confidence commit gets a dotted underline in the
+     main composer (conf 0 means "unknown" in Chrome — no flag on a guess) */
+  if(dictTarget.main && typeof conf === "number" && conf > 0 && conf < LOW_CONF){
+    const lead = ins.length - ins.replace(/^\s+/, "").length;
+    dictLowSpans.push({ start: at + lead, end: at + ins.length });
+    renderGhost();
+  }
   voiceMeta.dictated = true;
   voiceMeta.target = dictTarget.input;
   if(typeof conf === "number" && conf > 0) voiceMeta.confidences.push(conf);
@@ -2507,6 +2947,7 @@ Dictation.onState = s => {
   }
   if(listening){
     if(mic) mic.classList.remove("flash");
+    Cleanup.gen++;   // a new session owns the composer; stale cleanup replies die here
     const el = dictTarget.input;
     dictAnchor = el.selectionStart ?? el.value.length;
     dictInterimLen = 0;
@@ -2515,8 +2956,13 @@ Dictation.onState = s => {
     /* interim words still on screen stay put as normal text — never wipe */
     if(dictInterimLen){ dictAnchor += dictInterimLen; dictInterimLen = 0; voiceMeta.dictated = true; voiceMeta.target = dictTarget.input; }
     renderGhost();
+    /* a session that ended with a dictated draft still in its composer gets
+       the punctuation pass; a discarded or errored one doesn't */
+    const finished = !dictDiscard && !Dictation._erred && voiceMeta.dictated &&
+      voiceMeta.target === dictTarget.input && !!dictTarget.input.value.trim();
     dictDiscard = false;
     if(!Dictation._erred) dictTarget.status("Dictation stopped.");
+    if(finished) Cleanup.run(dictTarget);
     Ambient.resumeAfterDictation();   // give the recognition slot back
   }
 };
@@ -2533,8 +2979,10 @@ Dictation.onError = msg => {
 };
 micBtn.addEventListener("click", () => {
   if(Dictation.active){ Dictation.stop(); return; }
+  if(VoiceTest.running){ micNotice("The voice accuracy test is using the microphone — stop it first."); return; }
   dictTarget = mainDict;
   micNoticeEl.hidden = true;
+  Speech.stop();                 // pressing the mic means you want to talk, not listen to us
   Ambient.pauseForDictation();   // one recognition slot: ambient yields to dictation
   Dictation.start();
 });
@@ -2803,6 +3251,7 @@ textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent
   background:rgba(20,20,22,.85);color:#fff;font-size:11.5px;text-align:center;
 }
 .notice[hidden]{display:none}
+.notice button{color:#7CC0FF;font-weight:600;margin-left:4px;font-size:11.5px}
 .badgeView{flex:1;display:none;flex-direction:column;align-items:center;justify-content:center}
 .badgeView button{display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 22px;border-radius:18px}
 .badgeView .count{
@@ -2894,8 +3343,10 @@ const PopOut = {
     this.els.mic.hidden = !Dictation.supported();
     this.els.mic.addEventListener("click", () => {
       if(Dictation.active){ Dictation.stop(); return; }
+      if(VoiceTest.running){ this.flashNotice("The voice accuracy test is using the microphone — stop it first."); return; }
       dictTarget = this.dict;
       this.els.notice.hidden = true;
+      Speech.stop();
       Ambient.pauseForDictation();
       Dictation.start();
     });
@@ -3046,19 +3497,25 @@ $("#pipBtn").addEventListener("click", () => PopOut.open(selectedId));
    cannot set, so the only capture path is the same Web Speech engine
    dictation uses. Off by default; one click arms it.
 
-   Pipeline: final fragments accumulate in a buffer (EchoGuard drops
-   anything that is our own TTS). The buffer flushes after 1400ms of
-   silence — 900ms when it already reads as a complete question — or
-   immediately once it hits the run-on cap. Fragments under 6 chars
-   or 2 words are ignored. A flushed utterance gets the persona's
-   vocabulary fixes, is deduped against the last 8 seconds, and then
-   queues for the classifier gate: one cheap-model call (action
-   "classify") returning needs_answer / normalized_question /
-   confidence / topic / reason, scoped by the persona's Task and
-   Context and instructed to err toward answering. At or above 0.45
-   confidence the normalized question goes through the normal answer
-   pipeline (full brief, search retry chain) with channel "voice" and
-   the classifier confidence logged, and the reply is spoken.
+   Pipeline: final fragments (each the best of the engine's N
+   alternatives, scored against the persona's vocabulary) accumulate
+   in a buffer (EchoGuard drops anything that is our own TTS; while
+   our TTS actually plays the recogniser is paused outright — see
+   Speech). The buffer flushes after 1400ms of silence — 900ms when
+   it already reads as a complete question — or immediately once it
+   hits the run-on cap. Fragments under 6 chars or 2 words are
+   ignored. A flushed utterance gets the persona's vocabulary fixes,
+   is deduped against the last 8 seconds, and then queues for the
+   classifier gate: one cheap-model call (action "classify")
+   returning needs_answer / normalized_question / confidence / topic
+   / reason, scoped by the persona's Task and Context and instructed
+   to err toward answering. The engine's transcript confidence rides
+   along: at or above 0.6 (or unknown) the classifier bar stays at
+   0.45, and below that it rises — a garbled utterance must clear a
+   higher bar before it may auto-answer. Accepted questions go
+   through the normal answer pipeline (full brief, search retry
+   chain) with channel "voice" and the TRANSCRIPT confidence logged
+   to the Messages tab, and the reply is spoken.
 
    THIS MUST NEVER GET STUCK: the classifier call is bounded at 15s
    and each answer attempt at CHAT_TIMEOUT_MS; a 4-second watchdog
@@ -3068,6 +3525,17 @@ $("#pipBtn").addEventListener("click", () => PopOut.open(selectedId));
    legitimate retries on slow networks. Every heard question ends in
    the decision log as answered, rejected, duplicate, dropped, or
    failed — an answer or a visible failure, never silence.
+
+   AND THE MICROPHONE MUST NEVER DIE SILENTLY: Chrome's recogniser
+   stops on long silence, network blips, and backgrounded tabs —
+   sometimes without ever firing an event. The same watchdog tick
+   also checks engine health: a session that never signals start
+   within 6s is aborted (the dead instance is discarded — every
+   restart constructs a fresh recogniser, never re-starts a wedged
+   object) and a missing session with no restart scheduled gets one.
+   Consecutive failures count as strikes; at three the band shows a
+   visible "Not hearing" state while retries continue at a slower
+   cadence, and any successful audio clears it.
 ================================================================= */
 const AMBIENT = {
   FLUSH_MS: 1400, FLUSH_QUESTION_MS: 900,
@@ -3081,21 +3549,34 @@ function looksLikeQuestion(t){
   if(/\?\s*$/.test(s)) return true;
   return QUESTION_OPENER.test(s) && s.split(/\s+/).length >= 4;
 }
+/* transcript confidence gates the classifier: a clean transcript (≥0.6, or
+   none reported) keeps the 0.45 bar; a garbled one must clear a higher bar
+   before it may auto-answer, up to 0.85 */
+function ambientRequiredConf(tconf){
+  if(typeof tconf !== "number" || tconf >= 0.6) return AMBIENT.CONF_MIN;
+  return Math.min(0.85, AMBIENT.CONF_MIN + (0.6 - tconf) * 0.75);
+}
 const Ambient = {
-  armed:false, paused:false, session:null,
-  buffer:"", interim:"", flushTimer:null, restartTimer:null, lastStart:0,
+  armed:false, paused:false, ttsHold:false, _ttsTimer:null, session:null,
+  buffer:"", interim:"", bufChars:0, bufWeighted:0,
+  flushTimer:null, restartTimer:null, lastStart:0,
+  strikes:0, stalled:false, _expectStop:false,
   stage:"listening", stageAt:0, stageText:"", stageCtl:null, current:null, _wd:false,
   queue:[], busy:false, recent:[], decisions:[], watchdog:null,
   /* tunable, not const: the watchdog geometry is part of the behavior */
   WATCH_TICK_MS: 4000,
   CLASSIFY_CEILING_MS: 20000,     // one 15s classifier call + margin
   ANSWER_CEILING_MS: 100000,      // > 2 × CHAT_TIMEOUT_MS: the whole retry chain + margin
+  START_WEDGE_MS: 6000,           // a session with no start signal after this is dead
+  TTS_RESUME_MS: 600,             // gap between our speech ending and listening again
   supported(){ return SPEECH_ENGINES.browser_native.supported(); },
   arm(){
     if(this.armed || !this.supported()) return;
     if(!getToken()){ micNotice("Ambient listening needs the access token — add it in Settings › Chat."); return; }
+    if(VoiceTest.running){ micNotice("The voice accuracy test is using the microphone — stop it first."); return; }
     if(Dictation.active) discardDictation();
-    this.armed = true; this.paused = false;
+    this.armed = true; this.paused = false; this.ttsHold = false;
+    this.strikes = 0; this.stalled = false;
     VoiceState.set("listening", selectedId);
     this.setStage("listening");
     this.startListening();
@@ -3104,19 +3585,22 @@ const Ambient = {
     refreshAmbient();
   },
   disarm(msg){
-    this.armed = false; this.paused = false;
+    this.armed = false; this.paused = false; this.ttsHold = false;
+    this.strikes = 0; this.stalled = false; this._expectStop = false;
     VoiceState.clear("listening");
     this.stopListening();
     clearTimeout(this.flushTimer); this.flushTimer = null;
     clearTimeout(this.restartTimer); this.restartTimer = null;
+    clearTimeout(this._ttsTimer); this._ttsTimer = null;
     clearInterval(this.watchdog); this.watchdog = null;
     if(this.stageCtl){ try{ this.stageCtl.abort(); }catch(e){} this.stageCtl = null; }
-    this.buffer = ""; this.interim = ""; this.queue.length = 0; this.busy = false; this.current = null;
+    this.buffer = ""; this.interim = ""; this.bufChars = 0; this.bufWeighted = 0;
+    this.queue.length = 0; this.busy = false; this.current = null;
     this.setStage("listening");
     if(msg) micNotice(msg);
     refreshAmbient();
   },
-  /* dictation and ambient share the one microphone/recognition slot */
+  /* dictation, our own TTS, and ambient share the one microphone slot */
   pauseForDictation(){
     if(!this.armed || this.paused) return;
     this.paused = true;
@@ -3126,41 +3610,97 @@ const Ambient = {
   resumeAfterDictation(){
     if(!this.armed || !this.paused) return;
     this.paused = false;
-    this.startListening();
+    if(!this.ttsHold) this.startListening();
     renderAmbient();
   },
+  /* while we speak, don't listen at all — the recogniser must never hear our
+     own voice. Resume trails the last utterance by TTS_RESUME_MS so the tail
+     of the audio can't leak in; EchoGuard remains the second line. */
+  pauseForSpeech(){
+    if(!this.armed) return;
+    /* always cancel a pending resume — back-to-back replies must not let the
+       old resume timer re-open the microphone mid-speech */
+    clearTimeout(this._ttsTimer); this._ttsTimer = null;
+    if(this.ttsHold) return;
+    this.ttsHold = true;
+    this.stopListening();
+    renderAmbient();
+  },
+  resumeAfterSpeech(){
+    if(!this.armed || !this.ttsHold) return;
+    clearTimeout(this._ttsTimer);
+    this._ttsTimer = setTimeout(() => {
+      this.ttsHold = false;
+      if(!this.paused) this.startListening();
+      renderAmbient();
+    }, this.TTS_RESUME_MS);
+  },
+  held(){ return this.paused || this.ttsHold; },
   /* persona switched: next session picks up the new dictation language */
   refreshLang(){
-    if(this.armed && !this.paused && this.session) this.stopListening();  // onEnd restarts
+    if(this.armed && !this.held() && this.session) this.stopListening();  // onEnd restarts
   },
   startListening(){
-    if(!this.armed || this.paused || this.session) return;
+    if(!this.armed || this.held() || this.session) return;
     const r = roleById(selectedId);
     const lang = (r && String(r.language || "").trim()) || "en-US";
     this.lastStart = Date.now();
     try{
       this.session = SPEECH_ENGINES.browser_native.start(lang, {
-        interim: t => { this.interim = t; renderAmbient(); },
-        final: t => this.onFragment(t),
+        interim: t => { this.interim = t; if(t) this.clearStrikes(); renderAmbient(); },
+        final: alts => {
+          const pick = pickAlternative(alts, roleById(selectedId));
+          this.clearStrikes();
+          this.onFragment(pick.transcript, pick.confidence);
+        },
         error: code => this.onErr(code),
         end: () => this.onEnd()
       });
-    }catch(e){ this.session = null; this.scheduleRestart(); }
+    }catch(e){
+      this.session = null;
+      this.noteFailure("the engine refused to start");
+      this.scheduleRestart();
+    }
   },
   stopListening(){
     const s = this.session;
     this.session = null;
-    if(s){ try{ s.stop(); }catch(e){} }
+    if(s){ this._expectStop = true; try{ s.stop(); }catch(e){} }
   },
   onEnd(){
+    const s = this.session;
     this.session = null;
-    if(this.armed && !this.paused) this.scheduleRestart();
+    const expected = this._expectStop;
+    this._expectStop = false;
+    if(!this.armed || this.held()) return;
+    /* a session that produced audio or lived a while ended naturally; one
+       that died right after starting is a strike toward "not hearing" */
+    if(!expected){
+      if(s && (s.gotResult || Date.now() - s.startedAt > 5000)) this.clearStrikes();
+      else this.noteFailure("the engine stopped straight after starting");
+    }
+    this.scheduleRestart();
   },
   scheduleRestart(){
     clearTimeout(this.restartTimer);
-    /* the engine ends itself periodically; back off only when it's bouncing */
-    const delay = Date.now() - this.lastStart < 1500 ? 2000 : 250;
-    this.restartTimer = setTimeout(() => this.startListening(), delay);
+    /* the engine ends itself periodically; back off when it's bouncing, and
+       further once it's visibly stalled. Every restart constructs a brand-new
+       recogniser instance — a wedged object is never re-started. */
+    const delay = this.stalled ? 4000 : (Date.now() - this.lastStart < 1500 ? 2000 : 250);
+    this.restartTimer = setTimeout(() => { this.restartTimer = null; this.startListening(); }, delay);
+  },
+  noteFailure(why){
+    this.strikes++;
+    if(this.strikes >= 3 && !this.stalled){
+      this.stalled = true;
+      this.log("fail", "(microphone)", "not hearing anything — " + why + "; still retrying");
+      renderAmbient();
+    }
+  },
+  clearStrikes(){
+    if(!this.strikes && !this.stalled) return;
+    this.strikes = 0;
+    if(this.stalled){ this.stalled = false; renderAmbient(); }
   },
   onErr(code){
     if(code === "aborted") return;
@@ -3169,11 +3709,16 @@ const Ambient = {
     }
     /* anything transient (no-speech, network): onEnd restarts the session */
   },
-  onFragment(t){
+  onFragment(t, conf){
     if(!this.armed || !t.trim()) return;
     this.interim = "";
     if(EchoGuard.isEcho(t)) return;              // our own TTS — never re-trigger
     this.buffer = (this.buffer ? this.buffer + " " : "") + t.trim();
+    /* length-weighted transcript confidence for the eventual flush */
+    if(typeof conf === "number" && conf > 0){
+      this.bufWeighted += conf * t.trim().length;
+      this.bufChars += t.trim().length;
+    }
     if(this.buffer.length >= AMBIENT.BUFFER_CAP){ this.flush(); return; }   // run-on cap
     clearTimeout(this.flushTimer);
     this.flushTimer = setTimeout(() => this.flush(),
@@ -3183,7 +3728,8 @@ const Ambient = {
   flush(){
     clearTimeout(this.flushTimer); this.flushTimer = null;
     const raw = this.buffer.trim();
-    this.buffer = ""; this.interim = "";
+    const tconf = this.bufChars ? Math.round(this.bufWeighted / this.bufChars * 1000) / 1000 : null;
+    this.buffer = ""; this.interim = ""; this.bufChars = 0; this.bufWeighted = 0;
     renderAmbient();
     if(!raw) return;
     const text = correctTranscript(raw);
@@ -3196,7 +3742,7 @@ const Ambient = {
       return;
     }
     this.recent.push({ norm, at: now });
-    this.enqueue({ text, roleId: selectedId, at: now });
+    this.enqueue({ text, roleId: selectedId, at: now, tconf });
   },
   enqueue(item){
     if(this.queue.length >= AMBIENT.QUEUE_CAP){
@@ -3231,9 +3777,12 @@ const Ambient = {
         : "classifier " + (err.timeout ? "timed out" : "failed: " + err.message));
       return;
     }
-    const conf = " (" + Math.round(v.confidence * 100) + "%)";
-    if(!v.needs_answer || v.confidence < AMBIENT.CONF_MIN){
-      this.log("no", item.text, (v.reason || "not a question for this role") + conf);
+    const tnote = typeof item.tconf === "number" ? " · transcript " + Math.round(item.tconf * 100) + "%" : "";
+    const conf = " (" + Math.round(v.confidence * 100) + "%" + tnote + ")";
+    const need = ambientRequiredConf(item.tconf);
+    if(!v.needs_answer || v.confidence < need){
+      this.log("no", item.text, (v.reason || "not a question for this role") + conf +
+        (v.needs_answer && need > AMBIENT.CONF_MIN ? " — needed " + Math.round(need * 100) + "% for a garbled transcript" : ""));
       return;
     }
     const q = v.normalized_question || item.text;
@@ -3245,8 +3794,10 @@ const Ambient = {
     if(!this.armed) return;
     if(pending.has(item.roleId)){ this.log("fail", q, "gave up waiting for the busy thread"); return; }
     this.setStage("answering", q);
+    /* the message's confidence feeds the Messages tab's TranscriptConfidence
+       column — the engine's number when it gave one, else the classifier's */
     const outcome = await sendTo(item.roleId, q, {
-      vm: { channel:"voice", confidence: v.confidence },
+      vm: { channel:"voice", confidence: typeof item.tconf === "number" ? item.tconf : v.confidence },
       speak: true
     });
     if(outcome !== "answered"){
@@ -3267,6 +3818,7 @@ const Ambient = {
       task: r ? r.task : "",
       context: r ? r.context : "",
       utterance: item.text,
+      transcriptConfidence: typeof item.tconf === "number" ? item.tconf : undefined,
       recent,
       instruction: "Decide whether this overheard utterance is a question this role should answer. " +
         "Err toward answering — a missed question is worse than an occasional extra answer. " +
@@ -3281,9 +3833,26 @@ const Ambient = {
       reason: String(v.reason || "")
     };
   },
-  /* the backstop: a stage pending far past its own timeout means a hung
-     promise — abort it and move on rather than wedging the pipeline */
+  /* the backstop, two duties per tick:
+     1. engine health — when we should be listening, verify the recogniser
+        actually is. A session that never signalled start is aborted and
+        DISCARDED (the next start constructs a fresh instance); a missing
+        session with no restart pending gets one scheduled.
+     2. pipeline — a stage pending far past its own timeout means a hung
+        promise; abort it and move on rather than wedging the queue. */
   tick(){
+    if(this.armed && !this.held()){
+      const s = this.session;
+      if(s && !s.gotStart && Date.now() - s.startedAt > this.START_WEDGE_MS){
+        this._expectStop = true;      // its onend is ours, not a failure of its own
+        this.session = null;
+        try{ s.abort(); }catch(e){}
+        this.noteFailure("the engine wedged before starting");
+        this.scheduleRestart();
+      }else if(!s && !this.restartTimer){
+        this.scheduleRestart();
+      }
+    }
     if(!this.busy || !this.stageAt) return;
     const age = Date.now() - this.stageAt;
     if(this.stage === "classifying" && age > this.CLASSIFY_CEILING_MS && this.stageCtl){
@@ -3323,15 +3892,18 @@ function refreshAmbient(){
 }
 function renderAmbient(){
   if(!Ambient.armed) return;
-  let label = "Listening", detail = "for questions to answer…", busyDot = false;
+  let label = "Listening", detail = "for questions to answer…", busyDot = false, deadDot = false;
   const heard = (Ambient.buffer + (Ambient.interim ? " " + Ambient.interim : "")).trim();
   if(Ambient.stage === "classifying"){ label = "Analyzing"; detail = "“" + Ambient.stageText + "”"; busyDot = true; }
   else if(Ambient.stage === "answering"){ label = "Answering"; detail = "“" + Ambient.stageText + "”"; busyDot = true; }
   else if(Ambient.paused){ label = "Paused"; detail = "while you dictate"; }
+  else if(Ambient.ttsHold){ label = "Paused"; detail = "while the assistant speaks"; }
+  else if(Ambient.stalled){ label = "Not hearing"; detail = "the microphone may be off or blocked — still retrying"; deadDot = true; }
   else if(heard){ label = "Heard"; detail = "“" + heard.slice(-90) + "”"; }
   $("#ambientState").textContent = label;
   $("#ambientDetail").textContent = detail;
   $("#ambientBand .ambientDot").classList.toggle("busy", busyDot);
+  $("#ambientBand .ambientDot").classList.toggle("dead", deadDot);
   const qEl = $("#ambientQueue");
   qEl.hidden = !Ambient.queue.length;
   qEl.textContent = Ambient.queue.length + " queued";
@@ -3354,6 +3926,235 @@ $("#ambientLogBtn").addEventListener("click", () => {
   box.hidden = !box.hidden;
   $("#ambientLogBtn").setAttribute("aria-expanded", String(!box.hidden));
   renderAmbientLog();
+});
+
+/* =================================================================
+   VOICE ACCURACY — none of the voice work above is verifiable
+   without a measurement. The Settings › Voice accuracy panel reads
+   test phrases aloud one at a time for the user to repeat, records
+   what the engine heard, and computes word error rate against the
+   expected text — once for the engine's own top guess and once
+   after N-best selection and vocabulary fixes, so the delta the
+   improvements buy is a number, not a feeling.
+
+   Phrases come from the Sheet's VoiceTests tab (action
+   "voiceTests"); without a server the ten built-in phrases — the
+   terms this business actually uses — stand in. Each run writes
+   LastTranscript / LastAlternativeUsed / LastConfidence /
+   LastResult / LastRunAt back to the tab, best-effort. The whole
+   panel needs a real microphone on the live page: the stubbed
+   engine used elsewhere can't validate any of this.
+================================================================= */
+const VOICE_TEST_SEED = [
+  { id:"vt01", phrase:"Northwind closed the quarter with record ARR." },
+  { id:"vt02", phrase:"Schedule the QBR with the Director of Customer Success." },
+  { id:"vt03", phrase:"Legal sent back the MSA redline this morning." },
+  { id:"vt04", phrase:"The DPA lists every subprocessor we rely on." },
+  { id:"vt05", phrase:"Marketing sources over half of our pipeline." },
+  { id:"vt06", phrase:"The renewal calendar shows three accounts at risk." },
+  { id:"vt07", phrase:"Escalate the SSO ticket to the Escalation Engineer." },
+  { id:"vt08", phrase:"Onboarding gets new customers to their first report." },
+  { id:"vt09", phrase:"The forecast holds only if pipeline coverage holds." },
+  { id:"vt10", phrase:"Compensation bands are owned by the Head of People." }
+];
+const VoiceTest = {
+  paneOpen:false, tests:null, results:{}, running:false, stopFlag:false,
+  current:null, phase:"", live:"", session:null, _loaded:false,
+  async load(){
+    if(!this.tests) this.tests = VOICE_TEST_SEED.map(t => ({ id:t.id, phrase:t.phrase, expected:t.phrase }));
+    if(this._loaded || !getToken()) return;
+    this._loaded = true;
+    try{
+      const data = await sheetCall({ action:"voiceTests" }, { timeoutMs:8000 });
+      const rows = data && (data.tests || data.rows || data.result);
+      if(Array.isArray(rows)){
+        const mapped = rows.map(r => ({
+          id: String(r.id || r.testId || r.TestId || "").trim(),
+          phrase: String(r.phrase || r.Phrase || "").trim(),
+          expected: String(r.expected || r.expectedTranscript || r.ExpectedTranscript || r.phrase || r.Phrase || "").trim()
+        })).filter(r => r.id && r.phrase);
+        if(mapped.length){ this.tests = mapped; renderVoiceTestPane(); }
+      }
+    }catch(e){}   // the built-in list stands
+  },
+  open(){
+    this.paneOpen = true;
+    this.load();
+    renderVoiceTestPane();
+    goDeep(true);
+    $("#sheetTitle").textContent = "Voice accuracy";
+  },
+  leave(){
+    if(!this.paneOpen) return;
+    this.paneOpen = false;
+    if(this.running) this.stop();
+  },
+  stop(){
+    this.stopFlag = true;
+    const s = this.session; this.session = null;
+    if(s){ try{ s.abort(); }catch(e){} }
+    try{ speechSynthesis.cancel(); }catch(e){}
+  },
+  async start(){
+    if(this.running || !this.tests || !this.tests.length) return;
+    if(!SPEECH_ENGINES.browser_native.supported()){ micNotice("This browser has no speech recognition."); return; }
+    this.running = true; this.stopFlag = false; this.results = {};
+    Speech.stop();
+    if(Dictation.active) discardDictation();
+    const holdAmbient = Ambient.armed;
+    if(holdAmbient) Ambient.pauseForDictation();   // the test owns the microphone slot
+    try{
+      for(const test of this.tests){
+        if(this.stopFlag || !this.paneOpen) break;
+        this.current = test.id;
+        this.phase = "say"; this.live = "";
+        renderVoiceTestPane();
+        await this.say(test.phrase);
+        if(this.stopFlag || !this.paneOpen) break;
+        this.phase = "hear";
+        renderVoiceTestPane();
+        const heard = await this.capture();
+        if(this.stopFlag) break;
+        const res = this.score(test, heard);
+        this.results[test.id] = res;
+        renderVoiceTestPane();
+        this.push(test, res);
+      }
+    }finally{
+      this.running = false; this.current = null; this.phase = ""; this.live = "";
+      this.session = null;
+      if(holdAmbient) Ambient.resumeAfterDictation();
+      renderVoiceTestPane();
+    }
+  },
+  /* read the phrase with the persona's voice, off the Speech queue so test
+     phrases never enter EchoGuard's buffer — the user is SUPPOSED to repeat
+     them, and a buffered copy would make ambient discard that speech later */
+  say(text){
+    return new Promise(res => {
+      if(!Speech.supported()) return res();
+      const r = roleById(selectedId);
+      const u = new SpeechSynthesisUtterance(text);
+      const v = r && Speech.voiceFor(r);
+      if(v) u.voice = v;
+      u.lang = (v && v.lang) || (r && String(r.language || "").trim()) || "en-US";
+      let done = false;
+      const fin = () => { if(!done){ done = true; clearTimeout(guard); setTimeout(res, 350); } };
+      const guard = setTimeout(fin, 12000);   // a wedged TTS engine can't wedge the test
+      u.onend = u.onerror = fin;
+      try{ speechSynthesis.speak(u); }catch(e){ fin(); }
+    });
+  },
+  capture(){
+    return new Promise(res => {
+      const r = roleById(selectedId);
+      const finals = [], rawParts = [], confs = [];
+      let altIndex = 0, done = false, silence = null, session = null;
+      const finish = () => {
+        if(done) return;
+        done = true;
+        clearTimeout(hard); clearTimeout(silence);
+        this.session = null; this.live = "";
+        if(session){ try{ session.abort(); }catch(e){} }
+        res({
+          raw: rawParts.join(" ").trim(),
+          picked: finals.join(" ").trim(),
+          altIndex,
+          confidence: confs.length ? Math.round(confs.reduce((a, b) => a + b, 0) / confs.length * 1000) / 1000 : null
+        });
+      };
+      const hard = setTimeout(finish, 9000);
+      try{
+        session = this.session = SPEECH_ENGINES.browser_native.start((r && String(r.language || "").trim()) || "en-US", {
+          interim: t => { this.live = t; renderVoiceTestPane(); },
+          final: alts => {
+            const pick = pickAlternative(alts, r);
+            rawParts.push(alts[0].transcript.trim());
+            finals.push(pick.transcript.trim());
+            if(pick.index > altIndex) altIndex = pick.index;
+            if(typeof pick.confidence === "number" && pick.confidence > 0) confs.push(pick.confidence);
+            clearTimeout(silence);
+            silence = setTimeout(finish, 1600);
+          },
+          error: () => finish(),
+          end: () => finish()
+        });
+      }catch(e){ finish(); }
+    });
+  },
+  score(test, heard){
+    const corrected = correctTranscript(heard.picked);
+    return {
+      heardRaw: heard.raw, heard: corrected,
+      altIndex: heard.altIndex, confidence: heard.confidence,
+      werRaw: heard.raw ? wer(test.expected, heard.raw) : 1,
+      werCor: heard.picked ? wer(test.expected, corrected) : 1,
+      ok: !!heard.picked, at: Date.now()
+    };
+  },
+  push(test, res){
+    if(!getToken()) return;
+    sheetCall({ action:"voiceTestResult", result:{
+      testId: test.id,
+      transcript: res.heard,
+      rawTranscript: res.heardRaw,
+      alternativeUsed: res.altIndex,
+      confidence: res.confidence,
+      result: res.ok ? "WER " + Math.round(res.werCor * 100) + "% (raw " + Math.round(res.werRaw * 100) + "%)" : "no speech heard",
+      runAt: new Date().toISOString()
+    }}, { timeoutMs:10000 }).catch(() => {});
+  }
+};
+function renderVoiceTestPane(){
+  if(!VoiceTest.paneOpen) return;
+  const t = VoiceTest;
+  const done = (t.tests || []).filter(x => t.results[x.id]);
+  const oks = done.map(x => t.results[x.id]).filter(r => r.ok);
+  const mean = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+  const werCor = mean(oks.map(r => r.werCor));
+  const werRaw = mean(oks.map(r => r.werRaw));
+  const pct = v => v === null ? "—" : Math.round(v * 100) + "%";
+  const rows = (t.tests || []).map(x => {
+    const r = t.results[x.id];
+    const running = t.running && t.current === x.id;
+    let ico = "·", cls = "", sub = "";
+    if(running){
+      ico = "●"; cls = "run";
+      sub = t.phase === "say" ? "Listen, then repeat it back…" : (t.live ? "Hearing: " + t.live : "Your turn — repeat the phrase…");
+    }else if(r && r.ok){
+      cls = r.werCor <= 0.15 ? "ok" : "bad";
+      ico = r.werCor <= 0.15 ? "✓" : "✗";
+      sub = "Heard: “" + r.heard + "” · WER " + Math.round(r.werCor * 100) + "%" +
+        (r.werRaw !== r.werCor ? " (raw " + Math.round(r.werRaw * 100) + "%)" : "") +
+        (r.altIndex ? " · alternative " + (r.altIndex + 1) : "") +
+        (typeof r.confidence === "number" ? " · conf " + Math.round(r.confidence * 100) + "%" : "");
+    }else if(r){
+      cls = "bad"; ico = "!"; sub = "Nothing heard — check the microphone.";
+    }
+    return `<div class="vtRow ${cls}"><span class="ico" aria-hidden="true">${ico}</span>
+      <span class="tx">${esc(x.phrase)}${sub ? `<small>${esc(sub)}</small>` : ""}</span></div>`;
+  }).join("");
+  $("#paneRole").innerHTML = `
+    <div class="gLabel">Word error rate${done.length ? " · " + done.length + " of " + t.tests.length + " phrases" : ""}</div>
+    <div class="group"><div class="vtBig">
+      <div class="cell"><div class="num">${pct(werRaw)}</div><div class="lbl">Engine top guess</div></div>
+      <div class="cell"><div class="num">${pct(werCor)}</div><div class="lbl">After selection + fixes</div></div>
+      <div class="cell"><div class="num">${PickStats.nonTop}/${PickStats.finals || 0}</div><div class="lbl">Alt picks · session</div></div>
+    </div></div>
+    <div class="group" style="margin-top:14px">
+      <button class="row" data-vt-toggle><span class="k" style="color:${t.running ? "var(--danger)" : "var(--accent)"}">${t.running ? "Stop the test" : (done.length ? "Run it again" : "Read phrases and measure")}</span></button>
+    </div>
+    <div class="gLabel">Phrases</div>
+    <div class="group">${rows}</div>
+    <p class="footNote">Each phrase is read aloud — repeat it back once it finishes. What was heard, which alternative won, its confidence, and the word error rate are logged to the Sheet's VoiceTests tab when the deployment supports it. Run this on the live page with a real microphone; that measured figure is the acceptance number for the voice work.</p>`;
+}
+$("#paneRole").addEventListener("click", e => {
+  if(!VoiceTest.paneOpen) return;
+  if(e.target.closest("[data-vt-toggle]")){
+    if(VoiceTest.running) VoiceTest.stop();
+    else VoiceTest.start();
+    renderVoiceTestPane();
+  }
 });
 
 $("#cog").addEventListener("click", () => openSettings());
@@ -3485,6 +4286,7 @@ function deleteRole(){
 }
 let armedReset = false;
 function mainAction(act, el){
+  if(act === "voicetest"){ VoiceTest.open(); return; }
   if(act === "export"){
     const blob = new Blob([JSON.stringify(state, null, 2)], {type:"application/json"});
     const a = document.createElement("a");
