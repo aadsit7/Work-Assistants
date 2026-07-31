@@ -245,9 +245,10 @@ body.no-motion .char,body.no-motion .eyes,body.no-motion .hand{animation:none}
 .cardTop .titleTxt{margin:3px 0 0;font-size:20px;font-weight:700;letter-spacing:-.02em;line-height:1.2}
 .cardTop{text-align:left;border:0;font:inherit;cursor:pointer;transition:filter .2s}
 .cardTop:active{filter:brightness(.96)}
+.headBtns{display:flex;align-items:center;gap:8px;flex:none;margin-right:20px}
 .speak{
   width:34px;height:34px;border-radius:50%;background:var(--field);color:var(--label2);
-  display:grid;place-items:center;flex:none;margin-right:20px;
+  display:grid;place-items:center;flex:none;
   transition:transform .3s var(--spring),background .25s ease,color .25s ease;
 }
 .speak[hidden]{display:none}
@@ -537,6 +538,22 @@ body.no-motion .spinner{animation-duration:1.6s}
   background:var(--tint);color:#fff;font-size:10.5px;font-weight:700;display:grid;place-items:center;
   box-shadow:0 0 0 2.5px var(--card);
 }
+/* While an answer is in flight the send button becomes a stop button, so the
+   thread is never in a loading state the user can't get out of. */
+.send.stop{background:var(--danger)}
+.send svg[hidden]{display:none}
+/* Quiet system notes in the thread (a stopped answer) — visibly not a reply
+   and not an alarming error either. */
+.msg.note{justify-content:center}
+.msg.note .bubble{background:none;color:var(--label3);font-size:12.5px;padding:2px 8px}
+/* jump-to-message highlight from history search */
+.msg.hl .bubble{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 55%,transparent)}
+
+/* ---------- history ---------- */
+.sheet.history{height:min(680px,calc(100dvh - 120px))}
+.histThread{display:flex;flex-direction:column;gap:8px;padding:14px 2px 6px}
+mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;border-radius:3px;padding:0 1px}
+.histNote{text-align:center;color:var(--label3);font-size:13.5px;padding:34px 20px;line-height:1.55}
 
 /* ---------- role picker ---------- */
 .sheet.picker{height:min(640px,calc(100dvh - 120px))}
@@ -570,6 +587,7 @@ body.no-motion .spinner{animation-duration:1.6s}
   body:not(.showing-chart) .canvas{display:none}
   .navTitle{display:none}
   .sheet.picker{height:82dvh}
+  .sheet.history{height:94dvh}
   .sheet{
     left:0;right:0;top:auto;bottom:0;width:auto;height:94dvh;border-radius:22px 22px 0 0;
     transform:translateY(102%) scale(1);
@@ -615,6 +633,9 @@ body.no-motion .spinner{animation-duration:1.6s}
     <button data-pane="chat" aria-pressed="true">Chat</button>
     <button data-pane="chart" aria-pressed="false">Chart</button>
   </div>
+  <button class="iconBtn" id="histBtn" aria-label="Conversation history" title="Conversation history">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.2"/><path d="M12 7.6V12l3.1 1.9"/></svg>
+  </button>
   <button class="iconBtn" id="cog" aria-label="Open settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="12" cy="12" r="3.2"/>
@@ -665,9 +686,14 @@ body.no-motion .spinner{animation-duration:1.6s}
     </div>
     <svg class="pickChev" viewBox="0 0 14 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l6 6 6-6"/></svg>
   </button>
+  <div class="headBtns">
+  <button class="speak" id="pipBtn" hidden aria-label="Pop out this chat" title="Pop out this chat">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H14"/><path d="M4 6.5V16a3 3 0 0 0 3 3h9.5"/><rect x="10" y="9.5" width="10" height="8" rx="2"/></svg>
+  </button>
   <button class="speak" id="speakBtn" hidden aria-pressed="false" aria-label="Read replies aloud">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6.5 8.5H3.5v7h3L11 19V5Z"/><path d="M15 9.5a4 4 0 0 1 0 5"/><path d="M17.5 7a8 8 0 0 1 0 10"/></svg>
   </button>
+  </div>
   </div>
   <div class="tabs">
     <div class="seg b" id="tabSeg">
@@ -689,7 +715,8 @@ body.no-motion .spinner{animation-duration:1.6s}
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
     </button>
     <button class="send" id="send" disabled aria-label="Send message">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      <svg class="icoSend" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      <svg class="icoStop" viewBox="0 0 24 24" hidden aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2.5" fill="currentColor"/></svg>
     </button>
     <span class="vh" id="micStatus" role="status" aria-live="polite"></span>
   </div>
@@ -722,6 +749,26 @@ body.no-motion .spinner{animation-duration:1.6s}
     <input id="pickerQuery" placeholder="Search roles" autocomplete="off" aria-label="Search roles">
   </div>
   <div class="pane" id="pickerList"></div>
+</section>
+
+<!-- conversation history (memory only) -->
+<section class="sheet history" id="histSheet" role="dialog" aria-modal="true" aria-label="Conversation history">
+  <div class="sheetNav">
+    <button class="navAct" id="histBack" hidden>
+      <svg class="chev" viewBox="0 0 8 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(180deg);color:var(--accent)"><path d="M1 1l6 6-6 6"/></svg>
+      History
+    </button>
+    <div class="t" id="histTitle">History</div>
+    <button class="navAct right" id="histDone">Done</button>
+  </div>
+  <div class="search" id="histSearchRow">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+    <input id="histQuery" placeholder="Search this session's conversations" autocomplete="off" aria-label="Search conversations">
+  </div>
+  <div class="panes" id="histPanes">
+    <div class="pane" id="histList"></div>
+    <div class="pane" id="histView"></div>
+  </div>
 </section>
 
 <!-- settings -->
@@ -934,10 +981,22 @@ function getToken(){ try{ return (localStorage.getItem(TOKEN_KEY) || "").trim();
 function setToken(v){ try{ v && v.trim() ? localStorage.setItem(TOKEN_KEY, v.trim()) : localStorage.removeItem(TOKEN_KEY); }catch(e){} }
 
 /* text/plain on purpose: Apps Script doesn't answer CORS preflight, and a
-   JSON content type would trigger one. The token rides the query string. */
-async function sheetCall(payload, timeoutMs = 25000){
+   JSON content type would trigger one. The token rides the query string.
+
+   Every call is bounded: the timeout aborts the fetch, so no promise can hang
+   forever. A timeout and a user cancel both surface as AbortError — the flags
+   set here (err.timeout / err.canceled) are the only thing that tells them
+   apart everywhere else, so keep them accurate. */
+async function sheetCall(payload, opts = {}){
+  const timeoutMs = opts.timeoutMs || 25000;
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, timeoutMs);
+  const relay = () => ctl.abort();
+  if(opts.signal){
+    if(opts.signal.aborted) relay();
+    else opts.signal.addEventListener("abort", relay, { once:true });
+  }
   try{
     const res = await fetch(SHEET_ENDPOINT + "?token=" + encodeURIComponent(getToken()), {
       method:"POST",
@@ -954,8 +1013,35 @@ async function sheetCall(payload, timeoutMs = 25000){
       throw err;
     }
     return data;
-  }finally{ clearTimeout(timer); }
+  }catch(e){
+    if(e && e.name === "AbortError"){
+      const err = new Error(timedOut ? "no response after " + Math.round(timeoutMs / 1000) + "s" : "stopped");
+      if(timedOut){ err.timeout = true; err.code = "TIMEOUT"; }
+      else{ err.canceled = true; err.code = "CANCELED"; }
+      throw err;
+    }
+    throw e;
+  }finally{
+    clearTimeout(timer);
+    if(opts.signal) opts.signal.removeEventListener("abort", relay);
+  }
 }
+
+/* Keep-warm: Apps Script cold-starts after sitting idle, and the first real
+   question then pays that penalty. A tiny ping every 4 minutes while the app
+   is open keeps the deployment warm. Failures don't matter — the request
+   itself is the point — and pings pause while the tab is hidden. */
+const KEEPWARM_MS = 4 * 60 * 1000;
+let lastWarm = 0;
+function keepWarm(){
+  if(!getToken() || document.hidden) return;
+  lastWarm = Date.now();
+  sheetCall({ action:"ping" }, { timeoutMs:10000 }).catch(() => {});
+}
+setInterval(keepWarm, KEEPWARM_MS);
+document.addEventListener("visibilitychange", () => {
+  if(!document.hidden && Date.now() - lastWarm > KEEPWARM_MS) keepWarm();
+});
 
 function setConnected(on){
   sheetConnected = on;
@@ -1106,6 +1192,7 @@ function applyChrome(){
   $("#pageTitle").textContent = state.title;
   $("#pageSub").textContent = state.blurb;
   document.title = `${state.company} — ${state.subtitle}`;
+  PopOut.retheme();
 }
 
 /* =================================================================
@@ -1119,16 +1206,25 @@ function applyChrome(){
 
      { action:"config" }                  -> org chart, settings, personas
      { action:"savePersona", persona }    -> write one brief back
+     { action:"ping" }                    -> keep-warm no-op
      { action:"chat", roleId, roleTitle, company, system, promptHash,
-       promptVersion, personaVersion, temperature,
+       promptVersion, personaVersion, temperature, webSearch,
        messages:[{role,content}] }        -> { "reply": "text" }
+
+   webSearch asks the server to let the model search the web while
+   answering. When a chat call fails, the app retries the same
+   question once with webSearch:false before showing an error — a
+   server that ignores the flag simply gets the same request twice.
 
    The server rebuilds the prompt from the Personas tab and compares
    fingerprints; a mismatch is rejected as STALE_BRIEF rather than
    answered. Keep the Anthropic key in Script Properties — never here.
 ================================================================= */
-const threads = {};              // roleId -> [{role:"user"|"assistant", content, error}]
-let tab = "chat", waitingFor = null;
+const threads = {};              // roleId -> [{role:"user"|"assistant", content, error, note}]
+const archives = {};             // roleId -> [{at, end, hash, messages}] — cleared conversations, memory only
+let tab = "chat";
+const pending = new Set();       // roleIds with an answer in flight
+const inflight = new Map();      // roleId -> AbortController for that answer
 
 /* =================================================================
    PROMPT FIDELITY
@@ -1201,9 +1297,13 @@ function buildPrompt(role){
   return { text, hash: fnv1a(PROMPT_VERSION + "|" + text), missing, segments: seg.length };
 }
 
+const CHAT_TIMEOUT_MS = 45000;   // per attempt; the retry chain runs at most two
 const Agent = {
   buildSystem(role){ return buildPrompt(role).text; },
-  async reply(role, history){
+  /* Answer chain: ask with web search enabled; if that fails for any reason
+     except a user cancel, ask once more with search off; only then give up
+     and let the caller show a plain error. The signal aborts either leg. */
+  async reply(role, history, signal){
     const built = buildPrompt(role);
     if(built.missing.length) throw new Error("brief incomplete: " + built.missing.join(", "));
     if(!getToken()) return this.placeholder(role);
@@ -1220,10 +1320,24 @@ const Agent = {
       personaVersion: role.version || 1,
       temperature: FIDELITY.temperature,
       channel: (lastUser && lastUser.channel) || "chat",
+      webSearch: true,
       messages: history.filter(m => !m.error).map(m => ({ role:m.role, content:m.content }))
     };
     if(lastUser && typeof lastUser.confidence === "number") payload.transcriptConfidence = lastUser.confidence;
-    const data = await sheetCall(payload, 65000);
+    try{
+      return await this._ask(payload, signal);
+    }catch(err){
+      if(err.canceled) throw err;
+      try{
+        return await this._ask(Object.assign({}, payload, { webSearch:false }), signal);
+      }catch(err2){
+        if(!err2.canceled) err2.retried = true;
+        throw err2;
+      }
+    }
+  },
+  async _ask(payload, signal){
+    const data = await sheetCall(payload, { timeoutMs: CHAT_TIMEOUT_MS, signal });
     const text = data.reply || data.text || data.content;
     if(!text) throw new Error("empty reply");
     return typeof text === "string" ? text : JSON.stringify(text);
@@ -1295,8 +1409,10 @@ const Dictation = {
     return SPEECH_ENGINES[key] || SPEECH_ENGINES.browser_native;
   },
   supported(){ return this.engine().supported(); },
+  /* the composer that started the session decides the language — the pop-out
+     is pinned to its own persona, which may not be the selected one */
   lang(){
-    const r = roleById(selectedId);
+    const r = roleById(dictTarget.roleId || selectedId);
     return (r && String(r.language || "").trim()) || "en-US";
   },
   start(){
@@ -1522,6 +1638,21 @@ const STARTERS = [
   "Walk me through your latest update."
 ];
 const pinned = {};   // roleId -> prompt hash captured on the first message of a thread
+/* Clearing a conversation moves it into the in-memory archive instead of
+   destroying it, so History can still find it. The pin travels with the
+   conversation: a fresh thread pins the current brief, and restoring an
+   archived one brings its original hash back. */
+function archiveThread(roleId){
+  const t = threads[roleId];
+  delete threads[roleId];
+  const hash = pinned[roleId];
+  delete pinned[roleId];
+  if(t && t.some(m => !m.error)){
+    (archives[roleId] = archives[roleId] || []).unshift({
+      at: t[0].at || Date.now(), end: Date.now(), hash, messages: t
+    });
+  }
+}
 function threadNotices(r){
   const built = buildPrompt(r);
   let html = "";
@@ -1537,6 +1668,9 @@ function threadNotices(r){
   }
   return html;
 }
+const msgHTML = m => `<div class="msg ${m.role === "user" ? "me" : "from"} ${m.note ? "note" : m.error ? "err" : ""}">
+        <div class="bubble">${esc(displayText(m))}</div></div>`;
+let lastThreadRole = null;
 function renderThread(){
   const r = roleById(selectedId), box = $("#thread");
   if(!r) return;
@@ -1545,15 +1679,23 @@ function renderThread(){
   $("#composerInput").disabled = blocked;
   $("#composerInput").placeholder = blocked ? "Complete the brief to message this role" : "Message " + r.title;
   $("#mic").disabled = blocked;
-  if(blocked){ $("#send").disabled = true; Dictation.stop(); }
+  if(blocked && dictTarget.main) Dictation.stop();
+  /* Scroll preservation: a re-render keeps the reader's place. Only a render
+     that switched personas, or one where the reader was already at the
+     bottom, snaps to the newest message. */
+  const sameRole = lastThreadRole === r.id;
+  const wasAt = box.scrollTop;
+  const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 48;
+  lastThreadRole = r.id;
   const t = threads[r.id] || [];
-  if(!t.length && waitingFor !== r.id){
+  if(!t.length && !pending.has(r.id)){
     box.innerHTML = threadNotices(r) + `<div class="empty">
       ${avatarSVG(r)}
       <h4>${esc(r.title)}</h4>
       <p>Answers come from the brief on the other tab${getToken() ? "" : ". No access token yet, so replies are placeholders"}.</p>
       <div class="starters">${STARTERS.map(s=>`<button class="starter" data-starter="${esc(s)}">${esc(s)}</button>`).join("")}</div>
     </div>`;
+    refreshSendUI();
     return;
   }
   const time = new Date(t[0]?.at || Date.now())
@@ -1562,14 +1704,27 @@ function renderThread(){
     threadNotices(r) +
     `<div class="stamp">Today ${time}</div>` +
     `<div class="clearBar"><button data-clear>Clear conversation</button></div>` +
-    t.map(m => `<div class="msg ${m.role === "user" ? "me" : "from"} ${m.error ? "err" : ""}">
-        <div class="bubble">${esc(displayText(m))}</div></div>`).join("") +
-    (waitingFor === r.id ? `<div class="msg from"><div class="dots"><i></i><i></i><i></i></div></div>` : "");
-  box.scrollTop = box.scrollHeight;
+    t.map(msgHTML).join("") +
+    (pending.has(r.id) ? `<div class="msg from"><div class="dots"><i></i><i></i><i></i></div></div>` : "");
+  if(!sameRole || nearBottom) box.scrollTop = box.scrollHeight;
+  else box.scrollTop = wasAt;
+  refreshSendUI();
+}
+/* The send button doubles as the cancel control while this persona's answer
+   is in flight — there is always a live control, never a stuck spinner. */
+function refreshSendUI(){
+  const btn = $("#send"), input = $("#composerInput");
+  const busy = pending.has(selectedId);
+  btn.classList.toggle("stop", busy);
+  btn.querySelector(".icoSend").hidden = busy;
+  btn.querySelector(".icoStop").hidden = !busy;
+  btn.disabled = busy ? false : (input.disabled || !input.value.trim());
+  btn.setAttribute("aria-label", busy ? "Stop this answer" : "Send message");
+  PopOut.refreshSend();
 }
 function setTab(next){
   tab = next;
-  if(tab !== "chat"){ Dictation.stop(); Speech.stop(); }
+  if(tab !== "chat"){ if(dictTarget.main) Dictation.stop(); Speech.stop(); }
   $("#card").classList.toggle("chatting", tab === "chat");
   $("#tabSeg").classList.toggle("b", tab === "chat");
   $("#tabSeg").querySelectorAll("[data-tab]").forEach(b =>
@@ -1579,38 +1734,76 @@ function setTab(next){
     if(innerWidth > 900) setTimeout(() => $("#composerInput").focus(), 380);
   }
 }
-async function sendMessage(text){
-  const r = roleById(selectedId);
-  if(!r || !text.trim() || waitingFor === r.id) return;
+function friendlyError(err){
+  const tail = err.retried ? " I retried without search before giving up." : "";
+  if(err.timeout) return "This answer timed out (" + err.message + ")." + tail +
+    " Your message is still above — send it again, or check that the Apps Script deployment is reachable.";
+  return "Couldn't get a reply (" + (err.code ? err.code + ": " : "") + err.message + ")." + tail +
+    " Check your access token in Settings › Chat, and that the Apps Script deployment allows access to anyone.";
+}
+function cancelAnswer(roleId, silent){
+  const ctl = inflight.get(roleId);
+  if(!ctl) return;
+  if(silent) ctl.silent = true;   // abort without leaving a "stopped" note (used by Clear)
+  ctl.abort();
+}
+/* One send pipeline for every composer. `src.input` is the composer the text
+   came from (undefined for starters); answers land in the persona's thread no
+   matter which window asked. Answers to different personas can be in flight
+   at once — pending/inflight are per persona, so the pop-out and the main
+   composer never trip over each other. */
+async function sendTo(roleId, text, src){
+  const r = roleById(roleId);
+  if(!r || !text.trim() || pending.has(roleId)) return;
   const built = buildPrompt(r);
-  if(built.missing.length){ renderThread(); return; }
+  if(built.missing.length){ if(selectedId === roleId) renderThread(); return; }
   if(!pinned[r.id]) pinned[r.id] = built.hash;
-  const input = $("#composerInput");
+  const input = src && src.input;
   /* per-message channel flag: "voice" only when this composer draft was
      dictated; starters and typed messages stay "chat". Dictation always
      stops on send, and never auto-sends. */
-  if(Dictation.active && dictInterimLen) voiceMeta.dictated = true;
-  const vm = text === input.value ? consumeVoiceMeta() : { channel:"chat" };
-  discardDictation();
-  Speech.stop();
-  threads[r.id] = threads[r.id] || [];
-  threads[r.id].push({ role:"user", content:text.trim(), at:Date.now(), channel:vm.channel, confidence:vm.confidence });
-  input.value = ""; input.style.height = "41px"; $("#send").disabled = true;
-  waitingFor = r.id; renderThread(); renderChart();
-  try{
-    const reply = await Agent.reply(r, threads[r.id]);
-    threads[r.id].push({ role:"assistant", content:reply, at:Date.now() });
-    /* speak only if this conversation is still the one on screen */
-    if(selectedId === r.id && tab === "chat" && ttsOn(r.id)) Speech.speakReply(r, reply);
-  }catch(err){
-    threads[r.id].push({
-      role:"assistant", error:true, at:Date.now(),
-      content:"Couldn't get a reply (" + (err.code ? err.code + ": " : "") + err.message + "). Check your access token in Settings › Chat, and that the Apps Script deployment allows access to anyone."
-    });
+  if(Dictation.active && dictInterimLen && dictTarget.input === input){
+    voiceMeta.dictated = true; voiceMeta.target = input;
   }
-  waitingFor = null;
-  if(selectedId === r.id) renderThread();
-  renderChart();
+  const vm = input && text === input.value && voiceMeta.target === input
+    ? consumeVoiceMeta() : { channel:"chat" };
+  if(input && dictTarget.input === input) discardDictation();
+  Speech.stop();
+  threads[roleId] = threads[roleId] || [];
+  threads[roleId].push({ role:"user", content:text.trim(), at:Date.now(), channel:vm.channel, confidence:vm.confidence });
+  if(input){ input.value = ""; if(src.reset) src.reset(); }
+  const ctl = new AbortController();
+  inflight.set(roleId, ctl);
+  pending.add(roleId);
+  /* your own send always shows itself — scroll preservation is for renders
+     you didn't cause, not for the message you just wrote */
+  if(selectedId === roleId){ renderThread(); const b = $("#thread"); b.scrollTop = b.scrollHeight; }
+  renderChart(); PopOut.render(); refreshSendUI();
+  try{
+    const reply = await Agent.reply(r, threads[roleId], ctl.signal);
+    (threads[roleId] = threads[roleId] || []).push({ role:"assistant", content:reply, at:Date.now() });
+    /* speak only if this conversation is still the one on screen */
+    if(selectedId === roleId && tab === "chat" && ttsOn(roleId)) Speech.speakReply(r, reply);
+  }catch(err){
+    if(!(err.canceled && ctl.silent)){
+      (threads[roleId] = threads[roleId] || []).push(err.canceled
+        ? { role:"assistant", error:true, note:true, at:Date.now(), content:"You stopped this answer." }
+        : { role:"assistant", error:true, at:Date.now(), content:friendlyError(err) });
+    }
+  }finally{
+    /* always executed — the UI can never be left waiting on a dead promise */
+    pending.delete(roleId);
+    inflight.delete(roleId);
+    if(selectedId === roleId) renderThread();
+    renderChart(); refreshSendUI();
+    PopOut.onAnswer(roleId);
+  }
+}
+function sendMessage(text){
+  sendTo(selectedId, text, {
+    input: $("#composerInput"),
+    reset(){ $("#composerInput").style.height = "41px"; }
+  });
 }
 
 /* ========== role card ========== */
@@ -1657,14 +1850,15 @@ function selectRole(id){
   renderChart(); renderCard();
   const sel = $(".oRow.is-selected");
   if(sel) sel.scrollIntoView({block:"nearest"});
-  discardDictation();
+  /* only the main composer's draft dies with a persona switch — a pop-out
+     dictation session belongs to its pinned persona and keeps running */
+  if(dictTarget.main) discardDictation();
   Speech.stop();
   refreshMic();
   refreshSpeaker();
   const input = $("#composerInput");
   input.value = ""; input.style.height = "41px";
   input.placeholder = "Message " + r.title;
-  $("#send").disabled = true;
   setTab(tab);
   if(innerWidth <= 900) showPane("chat");
 }
@@ -1694,7 +1888,7 @@ function openChart(){
 function closeChart(){
   if(!chartOpen()) return;
   $("#chartOverlay").classList.remove("on");
-  if(!$("#sheet").classList.contains("on") && !$("#picker").classList.contains("on")) $("#scrim").classList.remove("on");
+  if(!$("#sheet").classList.contains("on") && !$("#picker").classList.contains("on") && !histOpen()) $("#scrim").classList.remove("on");
   chartRestoreTimer = setTimeout(() => $(".canvas").appendChild($("#chartWrap")), 340);
   $("#viewChart").focus();
 }
@@ -1869,7 +2063,7 @@ function openPicker(){
 }
 function closePicker(){
   $("#picker").classList.remove("on");
-  if(!$("#sheet").classList.contains("on")) $("#scrim").classList.remove("on");
+  if(!$("#sheet").classList.contains("on") && !histOpen()) $("#scrim").classList.remove("on");
 }
 
 /* ========== settings plumbing ========== */
@@ -1915,9 +2109,11 @@ function scheduleReconnect(){
       if(!Array.isArray(cfg.roles) || !cfg.roles.length) throw new Error("no personas in the Sheet");
       applyConfig(cfg);
       setConnected(true);
+      lastWarm = Date.now();
       hideBanner();
       applyChrome(); renderChart(); renderMain();
       selectRole(rootRole().id);
+      syncPip();
       if($("#epStatus")) $("#epStatus").textContent = connStatusText();
     }catch(err){
       if($("#epStatus")) $("#epStatus").textContent = "Couldn't connect: " + err.message;
@@ -2014,37 +2210,58 @@ $("#thread").addEventListener("click", e => {
   const s = e.target.closest("[data-starter]");
   if(s){ sendMessage(s.dataset.starter); return; }
   if(e.target.closest("[data-clear]")){
-    delete threads[selectedId]; renderThread(); renderChart();
+    cancelAnswer(selectedId, true);
+    archiveThread(selectedId);
+    renderThread(); renderChart(); PopOut.render();
   }
 });
 $("#composerInput").addEventListener("input", e => {
   const el = e.target;
   el.style.height = "41px";
   el.style.height = Math.min(el.scrollHeight, 124) + "px";
-  $("#send").disabled = !el.value.trim();
+  refreshSendUI();
   /* manual typing while dictating: keep every keystroke, move the insertion
      point to the caret, and let the next result land there */
-  if(Dictation.active){
+  if(Dictation.active && dictTarget.main){
     dictAnchor = el.selectionStart ?? el.value.length;
     dictInterimLen = 0;
     renderGhost();
   }
-  if(!el.value.trim()) resetVoiceMeta();
+  if(!el.value.trim() && (!voiceMeta.target || voiceMeta.target === el)) resetVoiceMeta();
 });
 $("#composerInput").addEventListener("keydown", e => {
   if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); sendMessage(e.target.value); }
 });
 $("#composerInput").addEventListener("scroll", () => { $("#composerGhost").scrollTop = $("#composerInput").scrollTop; });
-$("#send").addEventListener("click", () => sendMessage($("#composerInput").value));
+$("#send").addEventListener("click", () => {
+  if(pending.has(selectedId)) cancelAnswer(selectedId);
+  else sendMessage($("#composerInput").value);
+});
 
 /* ---------- dictation wiring ---------- */
 const micBtn = $("#mic"), micNoticeEl = $("#micNotice"), micStatusEl = $("#micStatus"), ghostEl = $("#composerGhost");
-const voiceMeta = { dictated:false, confidences:[] };
+const voiceMeta = { dictated:false, confidences:[], target:null };
 let dictAnchor = 0, dictInterimLen = 0, dictDiscard = false;
 let micNoticeTimer = null, micFlashTimer = null;
 
+/* Dictation writes into exactly one composer at a time. The main composer and
+   the pop-out each provide a target with the same shape; whichever mic
+   started the session owns the transcript until it ends. The ghost overlay is
+   optional — the pop-out shows interim words as plain text instead. */
+const mainDict = {
+  main: true,
+  roleId: null,                              // null = follow the selected persona
+  get input(){ return $("#composerInput"); },
+  get ghost(){ return ghostEl; },
+  get mic(){ return micBtn; },
+  status(msg){ micStatusEl.textContent = msg; },
+  notice(msg){ micNotice(msg); },
+  sync(){ syncComposer(); }
+};
+let dictTarget = mainDict;
+
 function refreshMic(){ micBtn.hidden = !Dictation.supported(); }
-function resetVoiceMeta(){ voiceMeta.dictated = false; voiceMeta.confidences.length = 0; }
+function resetVoiceMeta(){ voiceMeta.dictated = false; voiceMeta.confidences.length = 0; voiceMeta.target = null; }
 function consumeVoiceMeta(){
   const meta = { channel: voiceMeta.dictated ? "voice" : "chat" };
   if(voiceMeta.dictated && voiceMeta.confidences.length){
@@ -2059,7 +2276,7 @@ function discardDictation(){
   if(Dictation.active){ dictDiscard = true; Dictation.stop(); }
   resetVoiceMeta();
   dictAnchor = 0; dictInterimLen = 0;
-  ghostEl.hidden = true; ghostEl.textContent = "";
+  if(dictTarget.ghost){ dictTarget.ghost.hidden = true; dictTarget.ghost.textContent = ""; }
 }
 function micNotice(msg){
   clearTimeout(micNoticeTimer);
@@ -2071,34 +2288,36 @@ function syncComposer(){
   const el = $("#composerInput");
   el.style.height = "41px";
   el.style.height = Math.min(el.scrollHeight, 124) + "px";
-  $("#send").disabled = !el.value.trim();
+  refreshSendUI();
 }
 /* The ghost mirrors the textarea so the interim range can render lighter:
    committed text is transparent (the textarea shows it), the interim span
    paints over its own glyphs in a lighter color. */
 function renderGhost(){
-  const el = $("#composerInput");
-  if(!dictInterimLen){ ghostEl.hidden = true; ghostEl.textContent = ""; return; }
+  const g = dictTarget.ghost;
+  if(!g) return;
+  const el = dictTarget.input;
+  if(!dictInterimLen){ g.hidden = true; g.textContent = ""; return; }
   const v = el.value;
-  ghostEl.innerHTML = `<span>${esc(v.slice(0, dictAnchor))}</span><span class="int">${esc(v.slice(dictAnchor, dictAnchor + dictInterimLen))}</span><span>${esc(v.slice(dictAnchor + dictInterimLen))}</span>`;
-  ghostEl.hidden = false;
-  ghostEl.scrollTop = el.scrollTop;
+  g.innerHTML = `<span>${esc(v.slice(0, dictAnchor))}</span><span class="int">${esc(v.slice(dictAnchor, dictAnchor + dictInterimLen))}</span><span>${esc(v.slice(dictAnchor + dictInterimLen))}</span>`;
+  g.hidden = false;
+  g.scrollTop = el.scrollTop;
 }
 function spacedForInsert(text){
-  const before = $("#composerInput").value.slice(0, dictAnchor);
+  const before = dictTarget.input.value.slice(0, dictAnchor);
   const t = text.replace(/^\s+/, "");
   return before && !/\s$/.test(before) && t ? " " + t : t;
 }
 /* Replace the current interim range with `insert`; committing advances the
    anchor so dictation appends at the cursor and never wipes typed text. */
 function setDictText(insert, commit){
-  const el = $("#composerInput"), v = el.value;
+  const el = dictTarget.input, v = el.value;
   el.value = v.slice(0, dictAnchor) + insert + v.slice(dictAnchor + dictInterimLen);
   if(commit){ dictAnchor += insert.length; dictInterimLen = 0; }
   else dictInterimLen = insert.length;
   const caret = dictAnchor + dictInterimLen;
   try{ el.setSelectionRange(caret, caret); }catch(e){}
-  syncComposer();
+  dictTarget.sync();
   renderGhost();
 }
 
@@ -2114,38 +2333,47 @@ Dictation.onFinal = (t, conf) => {
   if(EchoGuard.isEcho(t)){ if(dictInterimLen) setDictText("", false); return; }
   setDictText(spacedForInsert(t), true);
   voiceMeta.dictated = true;
+  voiceMeta.target = dictTarget.input;
   if(typeof conf === "number" && conf > 0) voiceMeta.confidences.push(conf);
 };
 Dictation.onState = s => {
   const listening = s === "listening";
-  micBtn.classList.toggle("listening", listening);
-  micBtn.setAttribute("aria-pressed", String(listening));
-  micBtn.setAttribute("aria-label", listening ? "Stop dictation" : "Start dictation");
+  const mic = dictTarget.mic;
+  if(mic){
+    mic.classList.toggle("listening", listening);
+    mic.setAttribute("aria-pressed", String(listening));
+    mic.setAttribute("aria-label", listening ? "Stop dictation" : "Start dictation");
+  }
   if(listening){
-    micBtn.classList.remove("flash");
-    const el = $("#composerInput");
+    if(mic) mic.classList.remove("flash");
+    const el = dictTarget.input;
     dictAnchor = el.selectionStart ?? el.value.length;
     dictInterimLen = 0;
-    micStatusEl.textContent = "Listening. Tap the microphone again to stop.";
+    dictTarget.status("Listening. Tap the microphone again to stop.");
   }else{
     /* interim words still on screen stay put as normal text — never wipe */
-    if(dictInterimLen){ dictAnchor += dictInterimLen; dictInterimLen = 0; voiceMeta.dictated = true; }
+    if(dictInterimLen){ dictAnchor += dictInterimLen; dictInterimLen = 0; voiceMeta.dictated = true; voiceMeta.target = dictTarget.input; }
     renderGhost();
     dictDiscard = false;
-    if(!Dictation._erred) micStatusEl.textContent = "Dictation stopped.";
+    if(!Dictation._erred) dictTarget.status("Dictation stopped.");
   }
 };
 Dictation.onError = msg => {
-  micNotice(msg);
-  micStatusEl.textContent = msg;
-  clearTimeout(micFlashTimer);
-  micBtn.classList.remove("listening");
-  micBtn.classList.add("flash");
-  micFlashTimer = setTimeout(() => micBtn.classList.remove("flash"), 700);
+  dictTarget.notice(msg);
+  dictTarget.status(msg);
+  const mic = dictTarget.mic;
+  if(mic){
+    clearTimeout(micFlashTimer);
+    mic.classList.remove("listening");
+    mic.classList.add("flash");
+    micFlashTimer = setTimeout(() => mic.classList.remove("flash"), 700);
+  }
 };
 micBtn.addEventListener("click", () => {
-  if(Dictation.active) Dictation.stop();
-  else{ micNoticeEl.hidden = true; Dictation.start(); }
+  if(Dictation.active){ Dictation.stop(); return; }
+  dictTarget = mainDict;
+  micNoticeEl.hidden = true;
+  Dictation.start();
 });
 
 /* ---------- speech wiring ---------- */
@@ -2167,18 +2395,494 @@ if(Speech.supported()){
   /* voices arrive asynchronously in Chrome */
   speechSynthesis.onvoiceschanged = () => Speech.refreshVoices();
 }
+
+/* =================================================================
+   HISTORY — per-persona conversation history, held in memory only.
+
+   Live threads and archived (cleared) conversations are both listed,
+   grouped by persona. The search box matches message text across all
+   of them: a hit in a live thread jumps straight to that bubble; a
+   hit in an archived one opens a read-only transcript. Nothing here
+   is persisted — closing the page clears it, on purpose.
+================================================================= */
+function histOpen(){ return $("#histSheet").classList.contains("on"); }
+function histGoDeep(deep){
+  $("#histPanes").classList.toggle("deep", deep);
+  $("#histBack").hidden = !deep;
+  $("#histSearchRow").hidden = deep;
+  if(!deep){ $("#histTitle").textContent = "History"; $("#histList").scrollTop = 0; }
+}
+function openHistory(){
+  $("#histQuery").value = "";
+  renderHistory();
+  histGoDeep(false);
+  $("#histSheet").classList.add("on");
+  $("#scrim").classList.add("on");
+  if(innerWidth > 900) setTimeout(() => $("#histQuery").focus(), 380);
+}
+function closeHistory(){
+  $("#histSheet").classList.remove("on");
+  if(!$("#sheet").classList.contains("on") && !$("#picker").classList.contains("on") && !chartOpen())
+    $("#scrim").classList.remove("on");
+}
+const fmtTime = ts => new Date(ts).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
+function firstLine(messages){
+  const m = messages.find(x => x.role === "user") || messages[0];
+  return m ? clip(String(m.content).replace(/\s+/g, " "), 52) : "Conversation";
+}
+function snippetHTML(text, q){
+  const plain = String(text).replace(/\s+/g, " ");
+  const i = plain.toLowerCase().indexOf(q);
+  if(i < 0) return esc(clip(plain, 80));
+  const start = Math.max(0, i - 26);
+  return (start ? "…" : "") + esc(plain.slice(start, i)) +
+    "<mark>" + esc(plain.slice(i, i + q.length)) + "</mark>" +
+    esc(clip(plain.slice(i + q.length), 60));
+}
+function histHitRow(r, m, q, attr, where){
+  return `<button class="row" ${attr}>
+      ${avatarSVG(r)}
+      <span class="k" style="font-size:14px">${snippetHTML(m.content, q)}
+        <small>${esc(r.title)} · ${m.role === "user" ? "you" : "them"} · ${esc(where)}</small></span>${CHEV}
+    </button>`;
+}
+function renderHistory(){
+  const q = ($("#histQuery").value || "").trim().toLowerCase();
+  const list = $("#histList");
+  const roles = state.roles.filter(r => (threads[r.id] || []).length || (archives[r.id] || []).length);
+  if(!roles.length){
+    list.innerHTML = `<p class="histNote">No conversations yet this session.<br>History is held in memory only — it clears when the page closes.</p>`;
+    return;
+  }
+  if(q){
+    const rows = [];
+    roles.forEach(r => {
+      (threads[r.id] || []).forEach((m, i) => {
+        if(String(m.content).toLowerCase().includes(q))
+          rows.push(histHitRow(r, m, q, `data-jump="${r.id}:${i}"`, "Current"));
+      });
+      (archives[r.id] || []).forEach((c, ci) => {
+        c.messages.forEach(m => {
+          if(String(m.content).toLowerCase().includes(q))
+            rows.push(histHitRow(r, m, q, `data-arch="${r.id}:${ci}"`, "Earlier · " + fmtTime(c.at)));
+        });
+      });
+    });
+    list.innerHTML = rows.length
+      ? `<div class="gLabel">${rows.length} match${rows.length === 1 ? "" : "es"}</div><div class="group">${rows.join("")}</div>`
+      : `<p class="histNote">Nothing matches that.</p>`;
+    return;
+  }
+  list.innerHTML = roles.map(r => {
+    const live = threads[r.id] || [];
+    const rows = [];
+    if(live.length) rows.push(`<button class="row" data-live="${r.id}">
+        <span class="k">Current conversation<small>${live.length} message${live.length === 1 ? "" : "s"} · started ${fmtTime(live[0].at || Date.now())}</small></span>${CHEV}
+      </button>`);
+    (archives[r.id] || []).forEach((c, ci) => rows.push(`<button class="row" data-arch="${r.id}:${ci}">
+        <span class="k">${esc(firstLine(c.messages))}<small>${c.messages.length} message${c.messages.length === 1 ? "" : "s"} · cleared ${fmtTime(c.end)}</small></span>${CHEV}
+      </button>`));
+    return `<div class="gLabel">${esc(r.title)}</div><div class="group">${rows.join("")}</div>`;
+  }).join("") + `<p class="footNote">Held in memory only — closing or reloading this page clears the history.</p>`;
+}
+function renderHistView(roleId, convIdx){
+  const r = roleById(roleId);
+  const conv = (archives[roleId] || [])[convIdx];
+  if(!conv){ histGoDeep(false); return; }
+  $("#histTitle").textContent = r ? r.title : "Removed role";
+  const canRestore = r && !(threads[roleId] || []).length;
+  $("#histView").innerHTML = `
+    <div class="histThread">${conv.messages.map(msgHTML).join("")}</div>
+    <div class="group" style="margin-top:10px">
+      <button class="row" data-hist-copy="${roleId}:${convIdx}"><span class="k" style="color:var(--accent)">Copy transcript</span></button>
+      ${canRestore ? `<button class="row" data-hist-restore="${roleId}:${convIdx}"><span class="k" style="color:var(--accent)">Continue this conversation</span></button>` : ""}
+    </div>
+    <p class="footNote">Read-only. ${canRestore ? "Continuing moves it back into the live chat." : "Clear the live conversation first to continue this one."}</p>`;
+  $("#histView").scrollTop = 0;
+  histGoDeep(true);
+}
+function transcriptOf(messages, roleTitle){
+  return messages.filter(m => !m.note)
+    .map(m => (m.role === "user" ? "You: " : (roleTitle || "Them") + ": ") + displayText(m))
+    .join("\n\n");
+}
+function flashMessage(index){
+  const el = $("#thread").querySelectorAll(".msg")[index];
+  if(!el) return;
+  el.scrollIntoView({ block:"center" });
+  el.classList.add("hl");
+  setTimeout(() => el.classList.remove("hl"), 1800);
+}
+$("#histBtn").addEventListener("click", openHistory);
+$("#histDone").addEventListener("click", closeHistory);
+$("#histBack").addEventListener("click", () => { renderHistory(); histGoDeep(false); });
+$("#histQuery").addEventListener("input", renderHistory);
+$("#histList").addEventListener("click", e => {
+  const live = e.target.closest("[data-live]");
+  if(live){ closeHistory(); selectRole(live.dataset.live); return; }
+  const jump = e.target.closest("[data-jump]");
+  if(jump){
+    const [id, idx] = jump.dataset.jump.split(":");
+    closeHistory(); selectRole(id);
+    requestAnimationFrame(() => flashMessage(+idx));
+    return;
+  }
+  const arch = e.target.closest("[data-arch]");
+  if(arch){ const [id, ci] = arch.dataset.arch.split(":"); renderHistView(id, +ci); }
+});
+$("#histView").addEventListener("click", async e => {
+  const cp = e.target.closest("[data-hist-copy]");
+  if(cp){
+    const [id, ci] = cp.dataset.histCopy.split(":");
+    const r = roleById(id);
+    const conv = (archives[id] || [])[+ci];
+    if(!conv) return;
+    const label = cp.querySelector(".k");
+    try{
+      await navigator.clipboard.writeText(transcriptOf(conv.messages, r && r.title));
+      label.textContent = "Copied";
+    }catch(err){ label.textContent = "Couldn't copy"; }
+    setTimeout(() => { if(label.isConnected) label.textContent = "Copy transcript"; }, 1400);
+    return;
+  }
+  const rs = e.target.closest("[data-hist-restore]");
+  if(rs){
+    const [id, ci] = rs.dataset.histRestore.split(":");
+    const conv = (archives[id] || []).splice(+ci, 1)[0];
+    if(!conv) return;
+    threads[id] = conv.messages;
+    if(conv.hash) pinned[id] = conv.hash;
+    closeHistory();
+    selectRole(id);
+    renderChart(); PopOut.render();
+  }
+});
+
+/* =================================================================
+   POP-OUT — a floating always-on-top chat via Document Picture-in-
+   Picture (Chrome 116+). The window is pinned to the persona it was
+   opened for: switching personas in the main app doesn't retarget
+   it, so one thread can float while you browse the rest of the org.
+   Clicking the pop-out button again re-pins it to the now-current
+   persona.
+
+   The pop-out DOM is built fresh, from state, inside the PiP
+   window's own document — nodes are never moved out of the main
+   app, because any main-app re-render would orphan them. Where the
+   API is missing, the control never shows at all.
+
+   Collapse swaps the thread for a badge counting answers that land
+   while collapsed; a new answer auto-expands the window. resizeTo
+   needs a user gesture, so the auto-expand resize is best-effort —
+   without a gesture the content still expands at the current size.
+================================================================= */
+const PIP_CSS = `
+:root{--accent:#0A84FF;--tint:#8E8E93}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;display:flex;flex-direction:column;overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  font-size:14px;background:#F2F2F7;color:#1D1D1F;-webkit-font-smoothing:antialiased;
+}
+body.dark{background:#1C1C1E;color:#F5F5F7}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+svg[hidden]{display:none}
+.head{
+  display:flex;align-items:center;gap:9px;padding:9px 12px;flex:none;
+  border-bottom:.5px solid rgba(120,120,128,.35);
+  background:color-mix(in srgb,var(--tint) 14%,transparent);
+}
+.head .avatar{width:30px;height:30px;display:block;overflow:visible}
+.meta{flex:1;min-width:0;line-height:1.25}
+.meta b{display:block;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta span{font-size:10px;text-transform:uppercase;letter-spacing:.07em;font-weight:700;color:var(--tint)}
+.hBtn{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;flex:none;background:rgba(120,120,128,.16)}
+.hBtn svg{width:14px;height:14px}
+.thread{flex:1;min-height:0;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:7px}
+.msg{display:flex}
+.msg.me{justify-content:flex-end}
+.bubble{
+  max-width:86%;padding:7px 11px;border-radius:15px;font-size:13.5px;line-height:1.4;
+  white-space:pre-wrap;overflow-wrap:anywhere;background:rgba(120,120,128,.16);
+}
+.msg.from .bubble{border-bottom-left-radius:5px}
+.msg.me .bubble{background:var(--accent);color:#fff;border-bottom-right-radius:5px}
+.msg.err .bubble{background:rgba(255,59,48,.16);color:#FF3B30}
+.msg.note{justify-content:center}
+.msg.note .bubble{background:none;color:rgba(120,120,128,.95);font-size:11.5px;padding:1px 6px}
+.empty{margin:auto;text-align:center;color:rgba(120,120,128,.95);font-size:12.5px;padding:0 20px;line-height:1.5}
+.dots{display:flex;gap:4px;padding:10px 12px;background:rgba(120,120,128,.16);border-radius:15px;border-bottom-left-radius:5px}
+.dots i{width:6px;height:6px;border-radius:50%;background:rgba(120,120,128,.95);animation:dot 1.3s infinite}
+.dots i:nth-child(2){animation-delay:.16s}
+.dots i:nth-child(3){animation-delay:.32s}
+@keyframes dot{0%,60%,100%{opacity:.32;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+.composer{
+  display:flex;gap:7px;align-items:flex-end;padding:8px 10px 10px;flex:none;position:relative;
+  border-top:.5px solid rgba(120,120,128,.35);
+}
+textarea{
+  flex:1;min-width:0;border:0;background:rgba(120,120,128,.16);border-radius:16px;padding:8px 12px;
+  font:inherit;font-size:13.5px;line-height:1.35;color:inherit;resize:none;height:34px;max-height:96px;
+}
+textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent)}
+.cBtn{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;flex:none;background:rgba(120,120,128,.16);margin-bottom:2px}
+.cBtn svg{width:14px;height:14px}
+.cBtn:disabled{opacity:.35;cursor:default}
+.cBtn.primary{background:var(--accent);color:#fff}
+.cBtn.stop{background:#FF3B30;color:#fff}
+.cBtn.listening{background:var(--accent);color:#fff}
+.cBtn.flash{background:#FF3B30;color:#fff}
+.cBtn.ok{background:#34C759;color:#fff}
+.notice{
+  position:absolute;left:12px;right:12px;bottom:calc(100% + 4px);margin-inline:auto;
+  width:max-content;max-width:calc(100% - 24px);padding:6px 11px;border-radius:10px;
+  background:rgba(20,20,22,.85);color:#fff;font-size:11.5px;text-align:center;
+}
+.notice[hidden]{display:none}
+.badgeView{flex:1;display:none;flex-direction:column;align-items:center;justify-content:center}
+.badgeView button{display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 22px;border-radius:18px}
+.badgeView .count{
+  min-width:36px;height:36px;padding:0 10px;border-radius:18px;background:var(--tint);color:#fff;
+  font-size:16px;font-weight:700;display:grid;place-items:center;
+}
+.badgeView .lbl{font-size:11.5px;color:rgba(120,120,128,.95)}
+body.collapsed .thread,body.collapsed .composer{display:none}
+body.collapsed .badgeView{display:flex}
+`;
+const PopOut = {
+  win:null, roleId:null, collapsed:false, missed:0, els:null, dict:null, _nT:null,
+  supported(){ return "documentPictureInPicture" in window; },
+  async open(roleId){
+    if(!this.supported()) return;
+    if(this.win){ this.pin(roleId); try{ this.win.focus(); }catch(e){} return; }
+    let win;
+    try{ win = await documentPictureInPicture.requestWindow({ width:380, height:560 }); }
+    catch(err){ showBanner("Couldn't open the pop-out chat (" + esc(err.message) + ")."); return; }
+    this.win = win; this.collapsed = false; this.missed = 0;
+    const doc = win.document;
+    const style = doc.createElement("style");
+    style.textContent = PIP_CSS;
+    doc.head.appendChild(style);
+    doc.body.innerHTML = `
+      <header class="head">
+        <span id="pAvatar"></span>
+        <div class="meta"><b id="pTitle"></b><span id="pDept"></span></div>
+        <button class="hBtn" id="pCollapse" title="Collapse" aria-label="Collapse">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg>
+        </button>
+      </header>
+      <div class="badgeView"><button id="pExpand" aria-label="Expand">
+        <span class="count" id="pCount">0</span>
+        <span class="lbl">answers while collapsed — click to open</span>
+      </button></div>
+      <div class="thread" id="pThread"></div>
+      <div class="composer">
+        <div class="notice" id="pNotice" hidden></div>
+        <textarea id="pInput" rows="1" placeholder="Message" aria-label="Message"></textarea>
+        <button class="cBtn" id="pMic" hidden aria-label="Start dictation" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+        </button>
+        <button class="cBtn" id="pCopy" title="Copy the last answer" aria-label="Copy the last answer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5"/></svg>
+        </button>
+        <button class="cBtn primary" id="pSend" disabled aria-label="Send">
+          <svg id="pSendIco" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          <svg id="pStopIco" viewBox="0 0 24 24" hidden><rect x="6.5" y="6.5" width="11" height="11" rx="2.5" fill="currentColor"/></svg>
+        </button>
+      </div>`;
+    const q = s => doc.querySelector(s);
+    this.els = {
+      doc, avatar:q("#pAvatar"), title:q("#pTitle"), dept:q("#pDept"),
+      thread:q("#pThread"), input:q("#pInput"), mic:q("#pMic"), copy:q("#pCopy"),
+      send:q("#pSend"), sendIco:q("#pSendIco"), stopIco:q("#pStopIco"),
+      notice:q("#pNotice"), collapse:q("#pCollapse"), count:q("#pCount"), expand:q("#pExpand")
+    };
+    this.dict = {
+      main:false,
+      get roleId(){ return PopOut.roleId; },
+      get input(){ return PopOut.els && PopOut.els.input; },
+      ghost:null,
+      get mic(){ return PopOut.els && PopOut.els.mic; },
+      status(){},
+      notice(msg){ PopOut.flashNotice(msg); },
+      sync(){ PopOut._syncInput(); }
+    };
+    this.els.input.addEventListener("input", () => {
+      this._syncInput();
+      if(Dictation.active && dictTarget === this.dict){
+        dictAnchor = this.els.input.selectionStart ?? this.els.input.value.length;
+        dictInterimLen = 0;
+      }
+      if(!this.els.input.value.trim() && voiceMeta.target === this.els.input) resetVoiceMeta();
+    });
+    this.els.input.addEventListener("keydown", e => {
+      if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); this.send(); }
+    });
+    this.els.send.addEventListener("click", () => {
+      if(pending.has(this.roleId)) cancelAnswer(this.roleId);
+      else this.send();
+    });
+    this.els.mic.hidden = !Dictation.supported();
+    this.els.mic.addEventListener("click", () => {
+      if(Dictation.active){ Dictation.stop(); return; }
+      dictTarget = this.dict;
+      this.els.notice.hidden = true;
+      Dictation.start();
+    });
+    this.els.copy.addEventListener("click", () => this.copyLast());
+    this.els.collapse.addEventListener("click", () => this.setCollapsed(!this.collapsed));
+    this.els.expand.addEventListener("click", () => this.setCollapsed(false));
+    win.addEventListener("pagehide", () => this._closed());
+    this.pin(roleId);
+    refreshPipBtn();
+  },
+  /* (re)bind the window to a persona and paint everything from state */
+  pin(roleId){
+    if(!this.win) return;
+    const r = roleById(roleId);
+    if(!r){ this.close(); return; }
+    this.roleId = roleId;
+    const d = deptOf(r);
+    this.els.doc.title = r.title + " — " + state.company;
+    this.els.doc.body.style.setProperty("--accent", state.accent);
+    this.els.doc.body.style.setProperty("--tint", d.tint);
+    this.els.doc.body.classList.toggle("dark", state.appearance === "dark");
+    this.els.avatar.innerHTML = avatarSVG(r);
+    this.els.title.textContent = r.title;
+    this.els.dept.textContent = d.name;
+    this.els.input.placeholder = "Message " + r.title;
+    this.render();
+  },
+  retheme(){ if(this.win) this.pin(this.roleId); },
+  close(){ const w = this.win; this._closed(); if(w){ try{ w.close(); }catch(e){} } },
+  _closed(){
+    if(this.dict && dictTarget === this.dict){ discardDictation(); dictTarget = mainDict; }
+    this.win = null; this.roleId = null; this.els = null; this.dict = null;
+    this.collapsed = false; this.missed = 0;
+    refreshPipBtn();
+  },
+  _syncInput(){
+    if(!this.win) return;
+    const el = this.els.input;
+    el.style.height = "34px";
+    el.style.height = Math.min(el.scrollHeight, 96) + "px";
+    this.refreshSend();
+  },
+  send(){
+    if(!this.win) return;
+    const r = roleById(this.roleId);
+    if(r && buildPrompt(r).missing.length){
+      this.flashNotice("This persona's brief is incomplete — finish it in the main window first.");
+      return;
+    }
+    const el = this.els.input;
+    sendTo(this.roleId, el.value, { input: el, reset: () => { el.style.height = "34px"; } });
+    this.els.thread.scrollTop = this.els.thread.scrollHeight;
+  },
+  flashNotice(msg){
+    if(!this.win) return;
+    const n = this.els.notice;
+    n.textContent = msg;
+    n.hidden = false;
+    clearTimeout(this._nT);
+    this._nT = setTimeout(() => { n.hidden = true; }, 4000);
+  },
+  refreshSend(){
+    if(!this.win) return;
+    const busy = pending.has(this.roleId);
+    const s = this.els.send;
+    s.classList.toggle("stop", busy);
+    s.classList.toggle("primary", !busy);
+    this.els.sendIco.hidden = busy;
+    this.els.stopIco.hidden = !busy;
+    s.disabled = busy ? false : !this.els.input.value.trim();
+    s.setAttribute("aria-label", busy ? "Stop this answer" : "Send");
+  },
+  render(){
+    if(!this.win) return;
+    const box = this.els.thread;
+    const t = threads[this.roleId] || [];
+    const wasAt = box.scrollTop;
+    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    box.innerHTML = (t.length || pending.has(this.roleId))
+      ? t.map(msgHTML).join("") +
+        (pending.has(this.roleId) ? `<div class="msg from"><div class="dots"><i></i><i></i><i></i></div></div>` : "")
+      : `<div class="empty">This window stays pinned to this persona, even while the main app browses others. Ask something below.</div>`;
+    box.scrollTop = nearBottom ? box.scrollHeight : wasAt;
+    this.refreshSend();
+  },
+  /* called after every completed answer, success or failure */
+  onAnswer(roleId){
+    if(!this.win || roleId !== this.roleId) return;
+    if(this.collapsed){
+      this.missed++;
+      this.els.count.textContent = this.missed;
+      this.setCollapsed(false);          // auto-expand when a new answer lands
+    }else{
+      this.render();
+    }
+  },
+  setCollapsed(on){
+    if(!this.win) return;
+    this.collapsed = on;
+    if(on){ this.missed = 0; this.els.count.textContent = "0"; }
+    this.els.doc.body.classList.toggle("collapsed", on);
+    this.els.collapse.innerHTML = on
+      ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`
+      : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg>`;
+    this.els.collapse.title = on ? "Expand" : "Collapse";
+    this.els.collapse.setAttribute("aria-label", this.els.collapse.title);
+    /* resizeTo needs a user gesture; an auto-expand without one keeps the
+       current window size, which still shows the full thread */
+    try{ this.win.resizeTo(on ? 300 : 380, on ? 170 : 560); }catch(e){}
+    if(!on) this.render();
+  },
+  async copyLast(){
+    if(!this.win) return;
+    const t = threads[this.roleId] || [];
+    const last = [...t].reverse().find(m => m.role === "assistant" && !m.error);
+    if(!last){ this.flashNotice("No answer to copy yet."); return; }
+    const btn = this.els.copy;
+    try{
+      await this.win.navigator.clipboard.writeText(displayText(last));
+      btn.classList.add("ok");
+      setTimeout(() => { if(this.els && this.els.copy) this.els.copy.classList.remove("ok"); }, 900);
+    }catch(err){
+      this.flashNotice("Couldn't copy — click the pop-out first, then try again.");
+    }
+  }
+};
+function refreshPipBtn(){
+  const b = $("#pipBtn");
+  b.hidden = !PopOut.supported();
+  b.classList.toggle("on", !!PopOut.win);
+  b.setAttribute("aria-label", PopOut.win ? "Pin the pop-out chat to this persona" : "Pop out this chat");
+  b.title = b.getAttribute("aria-label");
+}
+/* config reloads, imports, and resets can swap the role list out from under
+   an open pop-out: re-pin it to fresh data, or close it if its persona is gone */
+function syncPip(){
+  if(!PopOut.win) return;
+  if(roleById(PopOut.roleId)) PopOut.pin(PopOut.roleId);
+  else PopOut.close();
+}
+$("#pipBtn").addEventListener("click", () => PopOut.open(selectedId));
+
 $("#cog").addEventListener("click", () => openSettings());
 $("#done").addEventListener("click", closeSettings);
 $("#back").addEventListener("click", () => { renderMain(); goDeep(false); });
 $("#scrim").addEventListener("click", () => {
   if($("#sheet").classList.contains("on")) closeSettings();
   else if($("#picker").classList.contains("on")) closePicker();
+  else if(histOpen()) closeHistory();
   else if(chartOpen()) closeChart();
 });
 addEventListener("keydown", e => {
   if(e.key !== "Escape") return;
   if($("#sheet").classList.contains("on")){ $("#panes").classList.contains("deep") ? (renderMain(), goDeep(false)) : closeSettings(); }
   else if($("#picker").classList.contains("on")) closePicker();
+  else if(histOpen()){ $("#histPanes").classList.contains("deep") ? (renderHistory(), histGoDeep(false)) : closeHistory(); }
   else if(chartOpen()) closeChart();
 });
 
@@ -2286,7 +2990,10 @@ function deleteRole(){
   }
   const wasSelected = selectedId === r.id;
   state.roles = state.roles.filter(x => x.id !== r.id);
+  cancelAnswer(r.id, true);
   delete threads[r.id];
+  delete archives[r.id];
+  if(PopOut.roleId === r.id) PopOut.close();
   armedDelete = false; renderMain(); goDeep(false); renderChart();
   if(wasSelected) selectRole(rootRole().id);
 }
@@ -2310,8 +3017,11 @@ function mainAction(act, el){
     }
     state = structuredClone(DEFAULTS); rebuildDepts(state.roles); normalizeRoles(); armedReset = false;
     setConnected(false);
+    [...inflight.keys()].forEach(id => cancelAnswer(id, true));
     Object.keys(threads).forEach(k => delete threads[k]);
+    Object.keys(archives).forEach(k => delete archives[k]);
     renderMain(); applyChrome(); renderChart(); selectRole(rootRole().id);
+    syncPip();
   }
 }
 $("#importFile").addEventListener("change", e => {
@@ -2326,6 +3036,7 @@ $("#importFile").addEventListener("change", e => {
       normalizeRoles();
       setConnected(false);
       renderMain(); goDeep(false); applyChrome(); renderChart(); selectRole(rootRole().id);
+      syncPip();
     }catch(err){
       alert("That file isn't a chart this page can read. Export one from Settings to see the expected format.");
     }
@@ -2362,6 +3073,7 @@ async function boot(){
   let banner = "";
   if(getToken()){
     try{
+      lastWarm = Date.now();          // the config call itself warms the deployment
       const cfg = await sheetCall({ action:"config" });
       if(!Array.isArray(cfg.roles) || !cfg.roles.length) throw new Error("no personas in the Sheet");
       applyConfig(cfg);
@@ -2374,6 +3086,7 @@ async function boot(){
   }
   if(!sheetConnected) rebuildDepts(state.roles);
   normalizeRoles();
+  refreshPipBtn();
   applyChrome();
   renderChart();
   selectRole(rootRole().id);
