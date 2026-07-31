@@ -193,31 +193,27 @@ body.no-lines .tree ul ul::before{border-color:transparent}
 /* ---------- the mark ---------- */
 /* Voice states are driven by data-voice / data-voice-role on <body> plus the
    per-persona rules in #voiceCSS — never by classes on the SVG nodes, which
-   any render() would destroy. Everything here is the state-independent base. */
+   any render() would destroy. Everything here is the state-independent base.
+   Mark rules are scoped under .avatar: the nav logo <img> also carries the
+   class "mark", and must not pick up the breathe animation. */
 .avatar{display:block;overflow:visible;transition:transform .35s var(--spring)}
 .node:hover .avatar,.oRow:hover .avatar{transform:translateY(-2px) scale(1.04)}
-.mk{transform-box:fill-box;transform-origin:50% 50%;animation:mkBreathe 5s ease-in-out infinite;animation-delay:var(--bd,0s)}
-.wave{transition:opacity .3s ease}
-.wave rect{transform-box:fill-box;transform-origin:50% 50%}
-/* per-bar voice timing: speaking staggers durations and phases so the bars
-   never sync into an equalizer; thinking sweeps its dip left to right */
-.wave rect:nth-child(1){--td:.52s;--tdl:-.35s;--sdl:0s}
-.wave rect:nth-child(2){--td:.66s;--tdl:-.1s;--sdl:.12s}
-.wave rect:nth-child(3){--td:.44s;--tdl:-.22s;--sdl:.24s}
-.wave rect:nth-child(4){--td:.6s;--tdl:-.48s;--sdl:.36s}
-.wave rect:nth-child(5){--td:.5s;--tdl:-.05s;--sdl:.48s}
-.mkDot,.mkRing{transform-box:fill-box;transform-origin:50% 50%}
-.mkDot{transition:opacity .25s ease}
-@keyframes mkBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.02)}}
-@keyframes mkTalk{from{transform:scaleY(.45)}to{transform:scaleY(1.18)}}
-@keyframes mkThink{0%,30%,100%{transform:scaleY(1)}15%{transform:scaleY(.5)}}
-@keyframes mkDotPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.35)}}
-@keyframes mkRingOut{0%{transform:scale(1);opacity:.7}80%,100%{transform:scale(1.16);opacity:0}}
+.avatar .mark{transform-box:fill-box;transform-origin:50% 50%;animation:breathe 5.2s ease-in-out infinite}
+.avatar .wave rect{transform-box:fill-box;transform-origin:50% 50%}
+.avatar .ring{opacity:0}
+@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.025)}}
+/* speaking — bars move independently, staggered */
+@keyframes talk{from{transform:scaleY(.28)}to{transform:scaleY(1.32)}}
+/* listening — collapse to a pulsing centre + expanding ring */
+@keyframes listenDot{0%,100%{transform:scaleY(.16)}50%{transform:scaleY(.30)}}
+@keyframes ringOut{0%{opacity:.55;transform:scale(.72)}70%{opacity:0;transform:scale(1.15)}100%{opacity:0;transform:scale(1.15)}}
+/* thinking — sequential dip, left to right */
+@keyframes think{0%,60%,100%{transform:scaleY(1)}30%{transform:scaleY(.42)}}
 /* frozen states keep their static shape: bars at the signature, listening as
-   a still dot — only the motion goes */
-body.no-motion .mk,body.no-motion .wave rect,body.no-motion .mkDot,body.no-motion .mkRing{animation:none!important}
+   the collapsed centre — only the motion goes */
+body.no-motion .avatar .mark,body.no-motion .avatar .wave rect,body.no-motion .avatar .ring{animation:none!important}
 @media (prefers-reduced-motion:reduce){
-  .mk,.wave rect,.mkDot,.mkRing,.ambientDot{animation:none!important}
+  .avatar .mark,.avatar .wave rect,.avatar .ring,.ambientDot{animation:none!important}
   .mic.listening::after,.speak.pulse::after{animation:none!important;opacity:.6;transform:scale(1.1)}
   *{transition-duration:.01ms!important}
 }
@@ -249,7 +245,7 @@ body.no-motion .mk,body.no-motion .wave rect,body.no-motion .mkDot,body.no-motio
 .cardTop{
   padding:20px 20px 16px;display:flex;gap:14px;align-items:center;flex:1;min-width:0;
 }
-.cardTop .avatar{width:56px;height:56px;flex:none}
+.cardTop .avatar{width:44px;height:44px;flex:none}
 .cardTop .meta{min-width:0;flex:1}
 .cardTop .eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--tint)}
 .cardTop .titleTxt{margin:3px 0 0;font-size:20px;font-weight:700;letter-spacing:-.02em;line-height:1.2}
@@ -332,6 +328,7 @@ button.row:active{background:var(--field)}
 .row .k small{display:block;font-size:12.5px;color:var(--label2);margin-top:2px;line-height:1.35}
 .row .v{font-size:15px;color:var(--label2);max-width:52%;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row .avatar{width:34px;height:34px;flex:none}
+#pickerList .row .avatar{width:56px;height:56px}
 .chev{width:8px;height:14px;flex:none;color:var(--label3)}
 .row input.text{
   flex:1;border:0;background:none;font-size:16px;color:var(--label);text-align:right;min-width:0;padding:0;
@@ -383,7 +380,7 @@ button.row:active{background:var(--field)}
 .addRow input:focus{outline:2px solid color-mix(in srgb,var(--accent) 60%,transparent)}
 .addRow button{padding:0 16px;border-radius:12px;background:var(--accent);color:#fff;font-weight:600;font-size:15px}
 .editHero{display:flex;align-items:center;gap:14px;padding:16px 14px}
-.editHero .avatar{width:64px;height:64px;flex:none}
+.editHero .avatar{width:104px;height:104px;flex:none}
 .editHero .n{font-size:17px;font-weight:600;letter-spacing:-.015em}
 .editHero .d{font-size:12.5px;color:var(--label2);margin-top:2px}
 .footNote{font-size:12.5px;color:var(--label3);line-height:1.55;padding:10px 14px 0}
@@ -1137,47 +1134,59 @@ function applyConfig(cfg){
 }
 
 /* ========== the mark ==========
-   One abstract AI mark for every persona: a gradient squircle holding a
-   five-bar voice waveform. Personas differ by color — the department tint,
-   or look.skin when set — and by a waveform signature derived from role.id
-   and look.style, so the same persona always renders the same bars and two
-   personas visibly differ. */
+   One graphite squircle for every persona — the AI speaks for the role, so
+   the mark is a voice, not a face. The persona's colour lives in the five-bar
+   waveform: the department tint, or look.skin when set. The signature is
+   deterministic from role.id and look.style, so the same persona always
+   renders the same bars and two personas visibly differ. */
 const markTint = role => (role.look && HEX_COLOR.test(role.look.skin || "")) ? role.look.skin : deptOf(role).tint;
-function shade(hex, f){
-  let h = String(hex).replace("#", "");
-  if(h.length < 6) h = h.slice(0, 3).split("").map(c => c + c).join("");
-  const n = parseInt(h.slice(0, 6), 16);
-  return "#" + [16, 8, 0].map(s => Math.round(((n >> s) & 255) * f).toString(16).padStart(2, "0")).join("");
+const MARK_SHELL = { light:"#1D1D1F", dark:"#2C2C2E" };
+
+/* Deterministic 5-bar voiceprint, mirrored so the mark stays calm and logo-like.
+   Same id always yields the same signature; different ids visibly differ. */
+function voiceprint(id, style){
+  let h = 2166136261;
+  const seed = String(id) + "|" + (style || 0);
+  for(let i = 0; i < seed.length; i++){ h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  const pick = () => { h = Math.imul(h, 16777619) >>> 0; return h; };
+  const outer = 26 + (pick() % 20);   // 26-45
+  const inner = 40 + (pick() % 22);   // 40-61
+  const mid   = 62 + (pick() % 16);   // 62-77  — centre always tallest
+  return [outer, inner, mid, inner, outer];
 }
-/* Bar heights: three bytes of the id+style hash, mapped into 25%–85% of the
-   waveform's 52-unit room and mirrored around the center bar. */
-function voiceprint(role){
-  const hx = fnv1a(String(role.id) + "#" + ((role.look && role.look.style) || 0));
-  const h = i => Math.round((13 + 31.2 * (parseInt(hx.slice(i * 2, i * 2 + 2), 16) / 255)) * 10) / 10;
-  const [a, m, c] = [h(0), h(1), h(2)];
-  return [a, m, c, m, a];
-}
-function avatarSVG(role, cls){
+
+/* No <defs>, no gradients, no url(#id), no filters, no CSS variables inside the
+   SVG. Every colour is a literal hex computed here. That is what makes this
+   render reliably when injected with innerHTML, many times, on one page.
+
+   `size` sets the SVG's own width/height attributes — an intrinsic size at
+   every call site, so the mark can never collapse where no stylesheet reaches.
+   The ring carries opacity="0" as an attribute for the same reason: it stays
+   hidden even in the pop-out document, and the listening animation overrides it.
+
+   The shell colour follows state.appearance rather than body.dark — the class
+   is set *from* state.appearance (applyChrome, PopOut.retheme), and reading
+   the state keeps a mark rendered mid-theme-switch from wearing the old shell. */
+function avatarSVG(role, cls, size){
+  const id = String(role.id);
   const tint = markTint(role);
-  /* the gradient id must be unique per persona — duplicate ids across
-     personas would paint every mark with whichever gradient came first */
-  const gid = "avg-" + String(role.id).replace(/[^a-zA-Z0-9_-]/g, "") + "-" + fnv1a(String(role.id));
-  const bd = ([...String(role.id)].reduce((a, c) => a + c.charCodeAt(0), 0) % 31) / 10;
-  const X = [18.5, 32, 45.5, 59, 72.5];
-  /* mkDot / mkRing carry opacity="0" as attributes so they stay hidden even
-     where the app stylesheet doesn't reach (the pop-out document) */
-  return `<svg class="avatar ${cls||""}" viewBox="0 0 100 100" data-role="${esc(role.id)}" aria-hidden="true">
-    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="${tint}"/><stop offset="1" stop-color="${shade(tint, .78)}"/>
-    </linearGradient></defs>
-    <g class="mk" style="--bd:${bd}s">
-      <rect x="6" y="6" width="88" height="88" rx="28" fill="url(#${gid})"/>
-      <path d="M14 33Q14 14 33 14H67Q86 14 86 33" fill="none" stroke="rgba(255,255,255,.32)" stroke-width="2.4" stroke-linecap="round"/>
-      <g class="wave" fill="rgba(255,255,255,.9)">
-        ${voiceprint(role).map((h, i) => `<rect x="${X[i]}" y="${(50 - h / 2).toFixed(1)}" width="9" height="${h}" rx="4.5"/>`).join("")}
-      </g>
-      <circle class="mkDot" cx="50" cy="50" r="7" fill="rgba(255,255,255,.92)" opacity="0"/>
-      <rect class="mkRing" x="6" y="6" width="88" height="88" rx="28" fill="none" stroke="${tint}" stroke-width="3" opacity="0"/>
+  const shell = state.appearance === "dark" ? MARK_SHELL.dark : MARK_SHELL.light;
+  const bars = voiceprint(id, (role.look && role.look.style) || 0);
+  const d = (id.length % 7) / 2;
+  const W = 10, GAP = 5, N = 5;
+  const x0 = (100 - (N * W + (N - 1) * GAP)) / 2;
+  const rects = bars.map((hgt, i) =>
+    `<rect x="${x0 + i * (W + GAP)}" y="${50 - hgt / 2}" width="${W}" height="${hgt}" rx="${W/2}" fill="${tint}"/>`
+  ).join("");
+  return `<svg class="avatar ${cls || ""}" width="${size}" height="${size}" viewBox="0 0 100 100"
+      data-role="${esc(id)}" aria-hidden="true">
+    <g class="mark" style="animation-delay:${d}s">
+      <rect class="ring" x="2" y="2" width="96" height="96" rx="30" fill="none" opacity="0"
+            stroke="${tint}" stroke-width="3" style="transform-box:fill-box;transform-origin:50% 50%"/>
+      <rect x="6" y="6" width="88" height="88" rx="26" fill="${shell}"
+            stroke="rgba(255,255,255,.14)" stroke-width="1"/>
+      <rect x="6" y="6" width="88" height="44" rx="26" fill="#FFFFFF" opacity=".07"/>
+      <g class="wave">${rects}</g>
     </g>
   </svg>`;
 }
@@ -1193,11 +1202,27 @@ function refreshVoiceCSS(){
   $("#voiceCSS").textContent = state.roles.map(r => {
     const id = String(r.id).replace(/["\\]/g, "\\$&");
     const on = st => `body[data-voice="${st}"][data-voice-role="${id}"] .avatar[data-role="${id}"]`;
-    return on("speaking") + ` .wave rect{animation:mkTalk var(--td) ease-in-out var(--tdl) infinite alternate}\n` +
-      on("thinking") + ` .wave rect{animation:mkThink 1.3s ease-in-out var(--sdl) infinite}\n` +
-      on("listening") + ` .wave{opacity:0}\n` +
-      on("listening") + ` .mkDot{opacity:.92;animation:mkDotPulse 1.4s ease-in-out infinite}\n` +
-      on("listening") + ` .mkRing{animation:mkRingOut 1.8s ease-out infinite}`;
+    const S = on("speaking"), L = on("listening"), T = on("thinking");
+    return [
+      /* speaking — bars move independently, staggered */
+      S + ` .wave rect{animation:talk .58s ease-in-out infinite alternate}`,
+      S + ` .wave rect:nth-child(1){animation-duration:.50s}`,
+      S + ` .wave rect:nth-child(2){animation-duration:.42s;animation-delay:.07s}`,
+      S + ` .wave rect:nth-child(3){animation-duration:.63s;animation-delay:.03s}`,
+      S + ` .wave rect:nth-child(4){animation-duration:.46s;animation-delay:.11s}`,
+      S + ` .wave rect:nth-child(5){animation-duration:.55s;animation-delay:.05s}`,
+      /* listening — collapse to a pulsing centre + expanding ring */
+      L + ` .wave rect{transition:transform .3s ease;transform:scaleY(.16)}`,
+      L + ` .wave rect:nth-child(3){animation:listenDot 1.5s ease-in-out infinite}`,
+      L + ` .ring{animation:ringOut 1.9s ease-out infinite}`,
+      /* thinking — sequential dip, left to right */
+      T + ` .wave rect{animation:think 1.25s ease-in-out infinite}`,
+      T + ` .wave rect:nth-child(1){animation-delay:0s}`,
+      T + ` .wave rect:nth-child(2){animation-delay:.09s}`,
+      T + ` .wave rect:nth-child(3){animation-delay:.18s}`,
+      T + ` .wave rect:nth-child(4){animation-delay:.27s}`,
+      T + ` .wave rect:nth-child(5){animation-delay:.36s}`
+    ].join("\n");
   }).join("\n");
 }
 
@@ -1208,7 +1233,7 @@ function nodeHTML(role, isRoot){
   return `<button class="node ${isRoot?"root-node":""} ${selectedId===role.id?"is-selected":""}"
       style="--tint:${d.tint}" data-id="${role.id}" aria-label="${esc(role.title)}, ${esc(d.name)}">
       ${asked ? `<span class="badge">${asked}</span>` : ""}
-      ${avatarSVG(role)}
+      ${avatarSVG(role, "", isRoot ? 74 : 62)}
       <span class="eyebrow">${esc(d.name)}</span>
       <span class="title">${esc(role.title)}</span>
     </button>`;
@@ -1226,7 +1251,7 @@ function outlineRow(role, sub){
   return `<button class="oRow ${sub ? "sub" : ""} ${selectedId === role.id ? "is-selected" : ""}"
       style="--tint:${d.tint}" data-id="${role.id}" ${selectedId === role.id ? 'aria-current="true"' : ""}
       aria-label="${esc(role.title)}, ${esc(d.name)}">
-      ${avatarSVG(role)}
+      ${avatarSVG(role, "", 28)}
       <span class="oTitle">${esc(role.title)}</span>
       ${asked ? `<span class="oBadge">${asked}</span>` : ""}
     </button>`;
@@ -1806,7 +1831,7 @@ function renderThread(){
   const t = threads[r.id] || [];
   if(!t.length && !pending.has(r.id)){
     box.innerHTML = threadNotices(r) + `<div class="empty">
-      ${avatarSVG(r)}
+      ${avatarSVG(r, "", 78)}
       <h4>${esc(r.title)}</h4>
       <p>Answers come from the brief on the other tab${getToken() ? "" : ". No access token yet, so replies are placeholders"}.</p>
       <div class="starters">${STARTERS.map(s=>`<button class="starter" data-starter="${esc(s)}">${esc(s)}</button>`).join("")}</div>
@@ -1938,7 +1963,7 @@ function renderCard(){
   const r = roleById(selectedId); if(!r) return;
   const d = deptOf(r);
   $("#card").style.setProperty("--tint", d.tint);
-  $("#cardAvatar").innerHTML = avatarSVG(r);
+  $("#cardAvatar").innerHTML = avatarSVG(r, "", 44);
   $("#cardDept").textContent = d.name;
   $("#cardTitle").textContent = r.title;
   const block = (label, text) => `<div class="field"><h3>${label}</h3><p>${esc(text || "—")}</p></div>`;
@@ -2044,7 +2069,7 @@ function renderMain(){
     <div class="gLabel">${DEPTS[k].name}</div>
     <div class="group">
       ${byDept[k].map(r => `<button class="row" data-edit="${r.id}">
-          ${avatarSVG(r)}<span class="k">${esc(r.title)}<small>${(r.knowledge||[]).length} knowledge sources</small></span>${CHEV}
+          ${avatarSVG(r, "", 34)}<span class="k">${esc(r.title)}<small>${(r.knowledge||[]).length} knowledge sources</small></span>${CHEV}
         </button>`).join("")}
       <button class="row" data-add="${k}"><span class="k" style="color:var(--accent)">Add a role</span></button>
     </div>`).join("");
@@ -2118,7 +2143,7 @@ function renderRolePane(){
   $("#paneRole").innerHTML = `
     <div class="gLabel">Mark</div>
     <div class="group">
-      <div class="editHero">${avatarSVG(r)}<div><div class="n">${esc(r.title)}</div><div class="d">${esc(d.name)}</div></div></div>
+      <div class="editHero">${avatarSVG(r, "", 104)}<div><div class="n">${esc(r.title)}</div><div class="d">${esc(d.name)}</div></div></div>
       <div class="row"><span class="k">Team</span>
         <select class="text" data-look="dept" style="text-align:right;border:0;background:none;color:var(--label2);font-size:15px">
           ${Object.keys(DEPTS).map(k=>`<option value="${k}" ${r.dept===k?"selected":""}>${DEPTS[k].name}</option>`).join("")}
@@ -2180,7 +2205,7 @@ function renderPicker(){
     <div class="gLabel">${DEPTS[k].name}</div>
     <div class="group">
       ${byDept[k].map(r => `<button class="row" data-pick="${r.id}">
-        ${avatarSVG(r)}
+        ${avatarSVG(r, "", 56)}
         <span class="k">${esc(r.title)}<span class="preview">${esc(previewFor(r))}</span></span>
         ${selectedId === r.id ? `<span class="tick">✓</span>` : CHEV}
       </button>`).join("")}
@@ -2579,7 +2604,7 @@ function snippetHTML(text, q){
 }
 function histHitRow(r, m, q, attr, where){
   return `<button class="row" ${attr}>
-      ${avatarSVG(r)}
+      ${avatarSVG(r, "", 34)}
       <span class="k" style="font-size:14px">${snippetHTML(m.content, q)}
         <small>${esc(r.title)} · ${m.role === "user" ? "you" : "them"} · ${esc(where)}</small></span>${CHEV}
     </button>`;
@@ -2787,9 +2812,11 @@ textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent
 .badgeView .lbl{font-size:11.5px;color:rgba(120,120,128,.95)}
 body.collapsed .thread,body.collapsed .composer{display:none}
 body.collapsed .badgeView{display:flex}
-.mk{transform-box:fill-box;transform-origin:50% 50%;animation:mkBreathe 5s ease-in-out infinite}
-@keyframes mkBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.02)}}
-@media (prefers-reduced-motion:reduce){.mk{animation:none}}
+.avatar .mark{transform-box:fill-box;transform-origin:50% 50%;animation:breathe 5.2s ease-in-out infinite}
+.avatar .wave rect{transform-box:fill-box;transform-origin:50% 50%}
+.avatar .ring{opacity:0}
+@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.025)}}
+@media (prefers-reduced-motion:reduce){.avatar .mark{animation:none}}
 `;
 const PopOut = {
   win:null, roleId:null, collapsed:false, missed:0, els:null, dict:null, _nT:null,
@@ -2890,7 +2917,7 @@ const PopOut = {
     this.els.doc.body.style.setProperty("--accent", state.accent);
     this.els.doc.body.style.setProperty("--tint", d.tint);
     this.els.doc.body.classList.toggle("dark", state.appearance === "dark");
-    this.els.avatar.innerHTML = avatarSVG(r);
+    this.els.avatar.innerHTML = avatarSVG(r, "", 30);
     this.els.title.textContent = r.title;
     this.els.dept.textContent = d.name;
     this.els.input.placeholder = "Message " + r.title;
@@ -3352,7 +3379,9 @@ $("#paneMain").addEventListener("click", e => {
   const tog = t.closest("[data-toggle]");
   if(tog){ const k = tog.dataset.toggle; state[k] = !state[k]; tog.querySelector(".tog").classList.toggle("on", state[k]); applyChrome(); return; }
   const theme = t.closest("[data-theme]");
-  if(theme){ state.appearance = theme.dataset.theme; renderMain(); applyChrome(); renderChart(); return; }
+  /* the mark's shell colour follows the appearance, so the card header and
+     thread (empty-state mark) re-render along with the chart */
+  if(theme){ state.appearance = theme.dataset.theme; renderMain(); applyChrome(); renderChart(); renderCard(); renderThread(); return; }
   const acc = t.closest("[data-accent]");
   if(acc){ state.accent = acc.dataset.accent; renderMain(); applyChrome(); return; }
   const ed = t.closest("[data-edit]");
