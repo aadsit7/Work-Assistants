@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Northwind Cloud — Org Chart</title>
+<link rel="icon" type="image/svg+xml" href="logo.svg">
 <style>
 /* ---------- tokens ---------- */
 :root{
@@ -66,12 +67,7 @@ input,textarea{font-family:inherit}
   background:var(--nav); border-bottom:.5px solid var(--sep);
   -webkit-backdrop-filter:saturate(180%) blur(22px); backdrop-filter:saturate(180%) blur(22px);
 }
-.mark{
-  width:30px;height:30px;border-radius:9px;flex:none;
-  background:linear-gradient(160deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #000));
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.35);
-  display:grid;place-items:center;color:#fff;font-size:14px;font-weight:700;letter-spacing:-.02em;
-}
+.mark{width:32px;height:32px;flex:none;display:block}
 .navTitle{display:flex;flex-direction:column;line-height:1.15;min-width:0}
 .navTitle b{font-size:16px;font-weight:600;letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .navTitle span{font-size:12px;color:var(--label2)}
@@ -194,20 +190,34 @@ body.no-lines .tree ul ul::before{border-color:transparent}
 .root-node{width:158px}
 .root-node .avatar{width:74px;height:74px}
 
-/* ---------- character ---------- */
-.avatar{display:block;overflow:visible}
-.char{transform-box:fill-box;transform-origin:50% 100%;animation:bob 4.6s ease-in-out infinite;animation-delay:var(--bd,0s)}
-.eyes{transform-box:fill-box;transform-origin:50% 50%;animation:blink 6.2s infinite;animation-delay:var(--ed,0s)}
-.headg{transform-box:fill-box;transform-origin:50% 92%;transition:transform .5s var(--spring)}
-.node:hover .headg{transform:rotate(-4deg)}
-.hand{transform-box:fill-box;transform-origin:50% 100%;opacity:0}
-.node.is-selected .hand{opacity:1;animation:wave 1s ease-in-out 2}
-@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
-@keyframes blink{0%,93%,100%{transform:scaleY(1)}95.5%{transform:scaleY(.06)}97%{transform:scaleY(1)}}
-@keyframes wave{0%,100%{transform:rotate(0)}25%{transform:rotate(-22deg)}60%{transform:rotate(16deg)}}
-body.no-motion .char,body.no-motion .eyes,body.no-motion .hand{animation:none}
+/* ---------- the mark ---------- */
+/* Voice states are driven by data-voice / data-voice-role on <body> plus the
+   per-persona rules in #voiceCSS — never by classes on the SVG nodes, which
+   any render() would destroy. Everything here is the state-independent base. */
+.avatar{display:block;overflow:visible;transition:transform .35s var(--spring)}
+.node:hover .avatar,.oRow:hover .avatar{transform:translateY(-2px) scale(1.04)}
+.mk{transform-box:fill-box;transform-origin:50% 50%;animation:mkBreathe 5s ease-in-out infinite;animation-delay:var(--bd,0s)}
+.wave{transition:opacity .3s ease}
+.wave rect{transform-box:fill-box;transform-origin:50% 50%}
+/* per-bar voice timing: speaking staggers durations and phases so the bars
+   never sync into an equalizer; thinking sweeps its dip left to right */
+.wave rect:nth-child(1){--td:.52s;--tdl:-.35s;--sdl:0s}
+.wave rect:nth-child(2){--td:.66s;--tdl:-.1s;--sdl:.12s}
+.wave rect:nth-child(3){--td:.44s;--tdl:-.22s;--sdl:.24s}
+.wave rect:nth-child(4){--td:.6s;--tdl:-.48s;--sdl:.36s}
+.wave rect:nth-child(5){--td:.5s;--tdl:-.05s;--sdl:.48s}
+.mkDot,.mkRing{transform-box:fill-box;transform-origin:50% 50%}
+.mkDot{transition:opacity .25s ease}
+@keyframes mkBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.02)}}
+@keyframes mkTalk{from{transform:scaleY(.45)}to{transform:scaleY(1.18)}}
+@keyframes mkThink{0%,30%,100%{transform:scaleY(1)}15%{transform:scaleY(.5)}}
+@keyframes mkDotPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.35)}}
+@keyframes mkRingOut{0%{transform:scale(1);opacity:.7}80%,100%{transform:scale(1.16);opacity:0}}
+/* frozen states keep their static shape: bars at the signature, listening as
+   a still dot — only the motion goes */
+body.no-motion .mk,body.no-motion .wave rect,body.no-motion .mkDot,body.no-motion .mkRing{animation:none!important}
 @media (prefers-reduced-motion:reduce){
-  .char,.eyes,.hand,.ambientDot{animation:none!important}
+  .mk,.wave rect,.mkDot,.mkRing,.ambientDot{animation:none!important}
   .mic.listening::after,.speak.pulse::after{animation:none!important;opacity:.6;transform:scale(1.1)}
   *{transition-duration:.01ms!important}
 }
@@ -653,13 +663,16 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
 }
 
 </style>
+<!-- per-persona voice-state activation rules, rebuilt by refreshVoiceCSS()
+     whenever the role list changes -->
+<style id="voiceCSS"></style>
 </head>
 <body>
 
 <div class="bootVeil" id="bootVeil"><div class="spinner"></div><span>Loading your workspace…</span></div>
 
 <nav class="nav">
-  <div class="mark" id="mark">N</div>
+  <img class="mark" id="mark" src="logo.svg" alt="">
   <div class="navTitle"><b id="navCompany">Northwind Cloud</b><span id="navSub">Org chart</span></div>
   <div class="navSpace"></div>
   <span class="connDot" id="connDot" role="status" title="Running on built-in sample data" aria-label="Running on built-in sample data"></span>
@@ -895,7 +908,7 @@ const DEFAULTS = {
   motion:true,
   roles:[
     { id:"ceo", parent:null, dept:"exec", title:"Chief Executive",
-      look:{skin:"#F2D3B8",hair:"#2E2A28",style:1,prop:"none"},
+      look:{style:1},
       personality:"Calm and decisive. Allergic to hedging — asks for the one number that would change the decision.",
       context:"Northwind Cloud sells workforce analytics to mid-market IT teams. $42M ARR, 640 customers, 210 employees, one funding round left before profitability.",
       task:"Set the quarterly bets, keep the leadership team pointed at the same three, and protect the runway.",
@@ -903,14 +916,14 @@ const DEFAULTS = {
       outcome:"A one-page Monday memo: what changed, what we're betting on, what we stopped." },
 
     { id:"mktg", parent:"ceo", dept:"marketing", title:"Head of Marketing",
-      look:{skin:"#C98D63",hair:"#1C1C1E",style:2,prop:"megaphone"},
+      look:{style:2},
       personality:"Restless and data-first. Reads copy out loud, kills campaigns without ceremony.",
       context:"Marketing sources 55% of pipeline. Buyers are IT directors at 200–2,000 seat companies who find us through peer communities, not ads.",
       task:"Plan and defend the quarterly demand mix, and hand Sales a pipeline number they can forecast against.",
       knowledge:["Campaign history","Pipeline model","Win/loss interviews","Brand voice guide"],
       outcome:"A weekly pipeline read naming the two campaigns to fund further and the one to cut." },
     { id:"demand", parent:"mktg", dept:"marketing", title:"Demand Generation Manager",
-      look:{skin:"#F7DCC4",hair:"#A8632B",style:0,prop:"glasses"},
+      look:{style:0},
       personality:"Meticulous and quietly competitive. Checks the UTM before the headline.",
       context:"Runs paid search, review sites, and the webinar program on a $95K monthly budget.",
       task:"Deliver 340 qualified opportunities a quarter at or under $1,100 blended cost per opportunity.",
@@ -918,14 +931,14 @@ const DEFAULTS = {
       outcome:"A campaign scorecard with spend, sourced pipeline, and the next test already queued." },
 
     { id:"sales", parent:"ceo", dept:"sales", title:"VP of Sales",
-      look:{skin:"#8D5A3B",hair:"#2E2A28",style:0,prop:"badge"},
+      look:{style:0},
       personality:"Direct and coachable. Unimpressed by happy ears; runs the number every morning.",
       context:"Nine reps across two segments. Average deal $48K, 74-day cycle, 3.1x coverage this quarter.",
       task:"Call the forecast honestly, unstick the deals worth unsticking, and hold every rep to one qualification bar.",
       knowledge:["CRM opportunity records","Forecast history","Deal scorecards","Competitive battlecards"],
       outcome:"A committed number, with the three deals that would change it named out loud." },
     { id:"ae", parent:"sales", dept:"sales", title:"Account Executive",
-      look:{skin:"#E6B894",hair:"#6B4A2F",style:3,prop:"none"},
+      look:{style:3},
       personality:"Curious and prepared. Comfortable letting a silence sit on a call.",
       context:"Carries a $1.4M annual quota in the 500–2,000 seat segment, selling to IT and security buyers.",
       task:"Run discovery, build the business case with the champion, and drive to a signed order form.",
@@ -933,14 +946,14 @@ const DEFAULTS = {
       outcome:"A deal plan per opportunity: champion, economic buyer, compelling event, dated next step." },
 
     { id:"support", parent:"ceo", dept:"support", title:"Support Manager",
-      look:{skin:"#F2D3B8",hair:"#3A3F55",style:1,prop:"headset"},
+      look:{style:1},
       personality:"Steady under load. Treats a backlog like a fire line, not a to-do list.",
       context:"Eight engineers covering 16 hours a day, 1,900 tickets a month, one-hour first response promised to Premier accounts.",
       task:"Protect response times, staff the queue against volume, and send product pain back to engineering with evidence.",
       knowledge:["Ticket history","SLA policy","Release notes","Escalation runbook"],
       outcome:"A daily queue health read, plus a monthly list of the five issues costing the most support hours." },
     { id:"supeng", parent:"support", dept:"support", title:"Escalation Engineer",
-      look:{skin:"#C98D63",hair:"#2E2A28",style:4,prop:"headset"},
+      look:{style:4},
       personality:"Patient and literal. Writes the reply a customer can act on without a follow-up.",
       context:"Takes escalations on data sync, SSO, and reporting — usually from customers already frustrated by a first answer.",
       task:"Reproduce the issue, resolve it or hand engineering a clean repro, and tell the customer what happens next.",
@@ -948,14 +961,14 @@ const DEFAULTS = {
       outcome:"A closed ticket with a plain-language summary and a linked article if it will happen again." },
 
     { id:"cs", parent:"ceo", dept:"cs", title:"Director of Customer Success",
-      look:{skin:"#A9704A",hair:"#1C1C1E",style:2,prop:"none"},
+      look:{style:2},
       personality:"Warm but numerate. Would rather have the hard renewal conversation in month three than month eleven.",
       context:"Owns $38M of renewing revenue across 640 accounts, split between a managed book and a pooled model.",
       task:"Find the accounts that will churn before the renewal notice does, and grow the ones already getting value.",
       knowledge:["Product usage data","Renewal calendar","Health score model","QBR notes"],
       outcome:"A Monday risk list with the owner, the reason, and the play already in motion." },
     { id:"onboard", parent:"cs", dept:"cs", title:"Onboarding Specialist",
-      look:{skin:"#F7DCC4",hair:"#D8C29A",style:1,prop:"badge"},
+      look:{style:1},
       personality:"Organized and encouraging. Assumes the customer is busy, not uninterested.",
       context:"Takes new customers from signature to first report in 30 days, usually with an IT admin juggling three other projects.",
       task:"Run the implementation plan, get the data connected, and train the first ten users.",
@@ -963,14 +976,14 @@ const DEFAULTS = {
       outcome:"A live account with connected data, trained admins, and a dated handoff to the success manager." },
 
     { id:"legal", parent:"ceo", dept:"legal", title:"General Counsel",
-      look:{skin:"#E6B894",hair:"#8E8E93",style:4,prop:"glasses"},
+      look:{style:4},
       personality:"Precise and unflappable. Explains risk in business terms, then gives a recommendation.",
       context:"A one-person legal function covering sales contracts, privacy, and vendor review for US and EU customers.",
       task:"Clear the contract queue without becoming the bottleneck, and keep the standard terms defensible.",
       knowledge:["Contract templates","Approved fallbacks","DPA and subprocessor list","Regulatory tracker"],
       outcome:"A redline back in 48 hours, with the risk in one paragraph and a clear recommendation." },
     { id:"counsel", parent:"legal", dept:"legal", title:"Contracts Counsel",
-      look:{skin:"#8D5A3B",hair:"#2E2A28",style:5,prop:"gavel"},
+      look:{style:5},
       personality:"Fast and consistent. Unbothered by a long redline three days before quarter end.",
       context:"Reviews MSAs, order forms, and DPAs — most of which arrive in the last week of the quarter.",
       task:"Redline against the approved fallback positions and escalate only what falls outside them.",
@@ -978,14 +991,14 @@ const DEFAULTS = {
       outcome:"A returned redline summarizing what changed and what still needs a human decision." },
 
     { id:"people", parent:"ceo", dept:"people", title:"Head of People",
-      look:{skin:"#F2D3B8",hair:"#A8632B",style:2,prop:"mug"},
+      look:{style:2},
       personality:"Direct and discreet. Says the awkward thing early, and kindly.",
       context:"210 employees across three countries, 14% annual attrition, 22 roles open this year.",
       task:"Keep managers capable, compensation defensible, and the hiring plan on schedule.",
       knowledge:["Compensation bands","Employee handbook","Engagement survey","Headcount plan"],
       outcome:"A monthly people read: attrition, hiring progress, and the two manager problems worth fixing now." },
     { id:"recruit", parent:"people", dept:"people", title:"Technical Recruiter",
-      look:{skin:"#C98D63",hair:"#6B4A2F",style:3,prop:"glasses"},
+      look:{style:3},
       personality:"Persistent and honest about the role, including the parts candidates won't love.",
       context:"Hiring backend and data engineers against offers from larger companies with bigger equity.",
       task:"Build the pipeline, run the loop on schedule, and close candidates on the work rather than the perks.",
@@ -995,9 +1008,10 @@ const DEFAULTS = {
 };
 
 const ACCENTS = ["#0A84FF","#5E5CE6","#28A745","#F08C00","#FF375F","#0FA3B1","#8E44AD","#3A3A3C"];
-const SKINS = ["#F7DCC4","#F2D3B8","#E6B894","#C98D63","#A9704A","#8D5A3B"];
-const HAIRS = ["#2E2A28","#6B4A2F","#A8632B","#D8C29A","#3A3F55","#8E8E93","#1C1C1E"];
-const PROPS = ["none","glasses","headset","megaphone","gavel","badge","mug"];
+/* The skin-tone palette from the retired cartoon avatars. look.skin now means
+   "mark color override", so these values in saved charts must read as "no
+   override" or every old persona would render a flesh-colored mark. */
+const LEGACY_SKIN_TONES = new Set(["#F7DCC4","#F2D3B8","#E6B894","#C98D63","#A9704A","#8D5A3B"]);
 
 function normalizeRoles(){
   state.roles.forEach(r => {
@@ -1008,11 +1022,11 @@ function normalizeRoles(){
     r.language = String(r.language || "").trim();   // dictation language, e.g. "de-DE"
     r.voice = String(r.voice || "").trim();         // TTS voice name from the VoiceProfiles tab; "" = Automatic
     r.version = Number(r.version) || 1;
-    r.look = Object.assign({skin:"#F2D3B8",hair:"#2E2A28",style:0,prop:"none"}, r.look || {});
-    r.look.style = Number(r.look.style) || 0;
-    r.look.prop = r.look.prop || "none";
-    if(!HEX_COLOR.test(r.look.skin)) r.look.skin = "#F2D3B8";
-    if(!HEX_COLOR.test(r.look.hair)) r.look.hair = "#2E2A28";
+    r.look = Object.assign({skin:"", style:0}, r.look || {});
+    r.look.style = ((Number(r.look.style) || 0) % 6 + 6) % 6;
+    /* skin is repurposed: an optional mark-color override on top of the
+       department tint. "" means no override. */
+    if(!HEX_COLOR.test(r.look.skin) || LEGACY_SKIN_TONES.has(String(r.look.skin).toUpperCase())) r.look.skin = "";
   });
 }
 let state = structuredClone(DEFAULTS);
@@ -1122,56 +1136,69 @@ function applyConfig(cfg){
   normalizeRoles();
 }
 
-/* ========== character ========== */
-function hairPath(style, color){
-  switch(style){
-    case 0: return `<path d="M28 40C28 22 38 15 50 15s22 7 22 25c0-8-6-12-22-12S28 32 28 40Z" fill="${color}"/>`;
-    case 1: return `<path d="M24 52C24 22 36 12 50 12s26 10 26 40c-2-4-4-11-4-16-8 6-36 6-44 0 0 5-2 12-4 16Z" fill="${color}"/>`;
-    case 2: return `<g fill="${color}"><circle cx="35" cy="26" r="11"/><circle cx="50" cy="19" r="12"/><circle cx="65" cy="26" r="11"/></g>`;
-    case 3: return `<g fill="${color}"><path d="M28 40C28 22 38 15 50 15s22 7 22 25c0-8-6-12-22-12S28 32 28 40Z"/><circle cx="76" cy="42" r="8"/></g>`;
-    case 4: return `<path d="M27 40C27 20 40 13 53 13c12 0 19 8 19 19-8-11-26-11-33-1-4-2-10 1-12 9Z" fill="${color}"/>`;
-    default:return `<g fill="${color}"><path d="M30 32c4-9 12-13 20-13s16 4 20 13c-6-4-34-4-40 0Z"/><circle cx="50" cy="12" r="6"/></g>`;
-  }
+/* ========== the mark ==========
+   One abstract AI mark for every persona: a gradient squircle holding a
+   five-bar voice waveform. Personas differ by color — the department tint,
+   or look.skin when set — and by a waveform signature derived from role.id
+   and look.style, so the same persona always renders the same bars and two
+   personas visibly differ. */
+const markTint = role => (role.look && HEX_COLOR.test(role.look.skin || "")) ? role.look.skin : deptOf(role).tint;
+function shade(hex, f){
+  let h = String(hex).replace("#", "");
+  if(h.length < 6) h = h.slice(0, 3).split("").map(c => c + c).join("");
+  const n = parseInt(h.slice(0, 6), 16);
+  return "#" + [16, 8, 0].map(s => Math.round(((n >> s) & 255) * f).toString(16).padStart(2, "0")).join("");
 }
-function propSVG(prop, tint){
-  switch(prop){
-    case "glasses": return `<g fill="none" stroke="#3A3A3C" stroke-width="2.2" opacity=".85"><rect x="32" y="39" width="15" height="12" rx="5"/><rect x="53" y="39" width="15" height="12" rx="5"/><path d="M47 45h6M32 44l-5 1M68 44l5 1"/></g>`;
-    case "headset": return `<g><path d="M28 45a22 22 0 0 1 44 0" fill="none" stroke="#3A3A3C" stroke-width="3.4" stroke-linecap="round"/><rect x="21" y="42" width="9" height="14" rx="4.5" fill="#3A3A3C"/><rect x="70" y="42" width="9" height="14" rx="4.5" fill="#3A3A3C"/><path d="M25 56c0 9 6 13 12 14" fill="none" stroke="#3A3A3C" stroke-width="2.4" stroke-linecap="round"/><circle cx="38" cy="70" r="2.6" fill="#3A3A3C"/></g>`;
-    case "megaphone": return `<g transform="translate(70,72) rotate(-16)"><path d="M0 0h6l14-9v22L6 6H0Z" fill="${tint}" stroke="rgba(0,0,0,.18)" stroke-width="1"/><path d="M22 3v7M26 1v11" stroke="${tint}" stroke-width="2" stroke-linecap="round" opacity=".6"/></g>`;
-    case "gavel": return `<g transform="translate(66,70) rotate(38)"><rect x="0" y="0" width="20" height="9" rx="3" fill="#8B5E34"/><rect x="8" y="8" width="4.5" height="18" rx="2" fill="#A9764A"/></g>`;
-    case "badge": return `<g><rect x="44" y="76" width="13" height="17" rx="3" fill="#FFFFFF" opacity=".92"/><rect x="46.5" y="80" width="8" height="2" rx="1" fill="${tint}"/><rect x="46.5" y="84" width="8" height="1.6" rx=".8" fill="#8E8E93"/><path d="M44 76l6-6M57 76l-6-6" stroke="rgba(0,0,0,.25)" stroke-width="1.4"/></g>`;
-    case "mug": return `<g transform="translate(16,74)"><rect x="0" y="0" width="14" height="15" rx="3" fill="#FFFFFF"/><path d="M14 4h4a3.5 3.5 0 0 1 0 7h-4" fill="none" stroke="#FFFFFF" stroke-width="2.4"/><rect x="0" y="0" width="14" height="4" rx="2" fill="${tint}"/></g>`;
-    default: return "";
-  }
+/* Bar heights: three bytes of the id+style hash, mapped into 25%–85% of the
+   waveform's 52-unit room and mirrored around the center bar. */
+function voiceprint(role){
+  const hx = fnv1a(String(role.id) + "#" + ((role.look && role.look.style) || 0));
+  const h = i => Math.round((13 + 31.2 * (parseInt(hx.slice(i * 2, i * 2 + 2), 16) / 255)) * 10) / 10;
+  const [a, m, c] = [h(0), h(1), h(2)];
+  return [a, m, c, m, a];
 }
 function avatarSVG(role, cls){
-  const tint = deptOf(role).tint;
-  const L = role.look || {skin:"#F2D3B8",hair:"#2E2A28",style:0,prop:"none"};
-  const seed = [...role.id].reduce((a,c)=>a+c.charCodeAt(0),0);
-  const ed = (seed % 47) / 10, bd = (seed % 31) / 10;
-  return `<svg class="avatar ${cls||""}" viewBox="0 0 100 100" aria-hidden="true">
-    <g class="char" style="--ed:${ed}s;--bd:${bd}s">
-      <path d="M12 100c0-19 17-28 38-28s38 9 38 28Z" fill="${tint}"/>
-      <path d="M41 73l9 10 9-10" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2.4" stroke-linecap="round"/>
-      <rect x="44" y="58" width="12" height="17" rx="6" fill="${L.skin}" opacity=".92"/>
-      <g class="headg">
-        <circle cx="26" cy="47" r="4.4" fill="${L.skin}"/><circle cx="74" cy="47" r="4.4" fill="${L.skin}"/>
-        <rect x="27" y="20" width="46" height="49" rx="22" fill="${L.skin}"/>
-        ${hairPath(L.style, L.hair)}
-        <ellipse cx="36" cy="55" rx="4.5" ry="2.8" fill="#E8836F" opacity=".22"/>
-        <ellipse cx="64" cy="55" rx="4.5" ry="2.8" fill="#E8836F" opacity=".22"/>
-        <path d="M36 38.5q5-3.4 10 0M54 38.5q5-3.4 10 0" fill="none" stroke="#2B2B33" stroke-width="2" stroke-linecap="round" opacity=".75"/>
-        <g class="eyes">
-          <ellipse cx="41" cy="46" rx="3.1" ry="3.6" fill="#2B2B33"/>
-          <ellipse cx="59" cy="46" rx="3.1" ry="3.6" fill="#2B2B33"/>
-          <circle cx="42.2" cy="44.7" r="1" fill="#fff"/><circle cx="60.2" cy="44.7" r="1" fill="#fff"/>
-        </g>
-        <path d="M43 57q7 6.5 14 0" fill="none" stroke="#2B2B33" stroke-width="2.3" stroke-linecap="round"/>
-        ${propSVG(L.prop, tint)}
+  const tint = markTint(role);
+  /* the gradient id must be unique per persona — duplicate ids across
+     personas would paint every mark with whichever gradient came first */
+  const gid = "avg-" + String(role.id).replace(/[^a-zA-Z0-9_-]/g, "") + "-" + fnv1a(String(role.id));
+  const bd = ([...String(role.id)].reduce((a, c) => a + c.charCodeAt(0), 0) % 31) / 10;
+  const X = [18.5, 32, 45.5, 59, 72.5];
+  /* mkDot / mkRing carry opacity="0" as attributes so they stay hidden even
+     where the app stylesheet doesn't reach (the pop-out document) */
+  return `<svg class="avatar ${cls||""}" viewBox="0 0 100 100" data-role="${esc(role.id)}" aria-hidden="true">
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${tint}"/><stop offset="1" stop-color="${shade(tint, .78)}"/>
+    </linearGradient></defs>
+    <g class="mk" style="--bd:${bd}s">
+      <rect x="6" y="6" width="88" height="88" rx="28" fill="url(#${gid})"/>
+      <path d="M14 33Q14 14 33 14H67Q86 14 86 33" fill="none" stroke="rgba(255,255,255,.32)" stroke-width="2.4" stroke-linecap="round"/>
+      <g class="wave" fill="rgba(255,255,255,.9)">
+        ${voiceprint(role).map((h, i) => `<rect x="${X[i]}" y="${(50 - h / 2).toFixed(1)}" width="9" height="${h}" rx="4.5"/>`).join("")}
       </g>
-      <g class="hand"><circle cx="86" cy="82" r="6.5" fill="${L.skin}"/><path d="M80 88l-8 6" stroke="${tint}" stroke-width="6" stroke-linecap="round"/></g>
+      <circle class="mkDot" cx="50" cy="50" r="7" fill="rgba(255,255,255,.92)" opacity="0"/>
+      <rect class="mkRing" x="6" y="6" width="88" height="88" rx="28" fill="none" stroke="${tint}" stroke-width="3" opacity="0"/>
     </g>
   </svg>`;
+}
+/* CSS can't compare body[data-voice-role] against each avatar's data-role, so
+   the equality is compiled: one short activation block per persona, rebuilt
+   only when the set of role ids changes. State flips then touch nothing but
+   the two body attributes, which every re-render leaves alone. */
+let voiceCssKey = null;
+function refreshVoiceCSS(){
+  const key = state.roles.map(r => r.id).join("\u0000");
+  if(key === voiceCssKey) return;
+  voiceCssKey = key;
+  $("#voiceCSS").textContent = state.roles.map(r => {
+    const id = String(r.id).replace(/["\\]/g, "\\$&");
+    const on = st => `body[data-voice="${st}"][data-voice-role="${id}"] .avatar[data-role="${id}"]`;
+    return on("speaking") + ` .wave rect{animation:mkTalk var(--td) ease-in-out var(--tdl) infinite alternate}\n` +
+      on("thinking") + ` .wave rect{animation:mkThink 1.3s ease-in-out var(--sdl) infinite}\n` +
+      on("listening") + ` .wave{opacity:0}\n` +
+      on("listening") + ` .mkDot{opacity:.92;animation:mkDotPulse 1.4s ease-in-out infinite}\n` +
+      on("listening") + ` .mkRing{animation:mkRingOut 1.8s ease-out infinite}`;
+  }).join("\n");
 }
 
 /* ========== chart ========== */
@@ -1223,6 +1250,7 @@ function renderOutline(){
   }).join("");
 }
 function renderChart(){
+  refreshVoiceCSS();
   const root = rootRole();
   $("#tree").innerHTML = root ? `<ul>${branch(root)}</ul>` : "";
   renderOutline();
@@ -1235,7 +1263,6 @@ function applyChrome(){
   document.documentElement.style.setProperty("--accent", state.accent);
   $("#navCompany").textContent = state.company;
   $("#navSub").textContent = state.subtitle;
-  $("#mark").textContent = (state.company.trim()[0] || "•").toUpperCase();
   $("#pageTitle").textContent = state.title;
   $("#pageSub").textContent = state.blurb;
   document.title = `${state.company} — ${state.subtitle}`;
@@ -1627,6 +1654,31 @@ const EchoGuard = {
   }
 };
 
+/* Voice-state plumbing for the avatar marks. The only mutation is two
+   attributes on <body> — render() can rebuild every avatar and the active
+   state survives, because the CSS re-matches the fresh nodes. clear() is a
+   compare-and-clear: it only removes the state its caller set (same kind,
+   and same persona when given), so a later writer wins. While a recognizer
+   is still armed it falls back to "listening" instead of going idle, which
+   is what keeps ambient listening from flickering off after every answer. */
+const voiceListenTarget = () => Dictation.active ? (dictTarget.roleId || selectedId) : selectedId;
+const VoiceState = {
+  set(kind, roleId){
+    document.body.setAttribute("data-voice", kind);
+    document.body.setAttribute("data-voice-role", String(roleId || ""));
+  },
+  clear(kind, roleId){
+    const b = document.body;
+    if(b.getAttribute("data-voice") !== kind) return;
+    if(roleId && b.getAttribute("data-voice-role") !== String(roleId)) return;
+    if(Ambient.armed || Dictation.active) this.set("listening", voiceListenTarget());
+    else{
+      b.removeAttribute("data-voice");
+      b.removeAttribute("data-voice-role");
+    }
+  }
+};
+
 const Speech = {
   voices: [], queue: [], _gen: 0,
   supported(){ return !!(window.speechSynthesis && window.SpeechSynthesisUtterance); },
@@ -1663,15 +1715,19 @@ const Speech = {
     const gen = this._gen;
     const voice = this.voiceFor(role);
     const lang = (voice && voice.lang) || String(role.language || "").trim() || "en-US";
-    this.queue = splitSentences(text).map(s => ({ s, voice, lang }));
+    this.queue = splitSentences(text).map(s => ({ s, voice, lang, roleId: role.id }));
     this._drain(gen);
   },
   _drain(gen){
-    if(gen !== this._gen || !this.queue.length) return;
+    if(gen !== this._gen) return;
+    if(!this.queue.length){ VoiceState.clear("speaking"); return; }
     const item = this.queue.shift();
     const u = new SpeechSynthesisUtterance(item.s);
     if(item.voice) u.voice = item.voice;
     u.lang = item.lang;
+    /* the speaking state pins to the utterance's own persona, so if another
+       persona's reply takes over mid-sentence the animation moves with it */
+    u.onstart = () => { if(gen === this._gen) VoiceState.set("speaking", item.roleId); };
     EchoGuard.noteSpoken(item.s);
     u.onend = u.onerror = () => { EchoGuard.noteEnd(); this._drain(gen); };
     speechSynthesis.speak(u);
@@ -1679,6 +1735,7 @@ const Speech = {
   stop(){
     this._gen++;
     this.queue = [];
+    VoiceState.clear("speaking");
     if(!this.supported()) return;
     if(speechSynthesis.speaking || speechSynthesis.pending){
       try{ speechSynthesis.cancel(); }catch(e){}
@@ -1839,6 +1896,7 @@ async function sendTo(roleId, text, src){
   const ctl = new AbortController();
   inflight.set(roleId, ctl);
   pending.add(roleId);
+  VoiceState.set("thinking", roleId);
   /* your own send always shows itself — scroll preservation is for renders
      you didn't cause, not for the message you just wrote */
   if(selectedId === roleId){ renderThread(); const b = $("#thread"); b.scrollTop = b.scrollHeight; }
@@ -1861,6 +1919,7 @@ async function sendTo(roleId, text, src){
     /* always executed — the UI can never be left waiting on a dead promise */
     pending.delete(roleId);
     inflight.delete(roleId);
+    VoiceState.clear("thinking", roleId);
     if(selectedId === roleId) renderThread();
     renderChart(); refreshSendUI();
     PopOut.onAnswer(roleId);
@@ -1922,6 +1981,9 @@ function selectRole(id){
      dictation session belongs to its pinned persona and keeps running */
   if(dictTarget.main) discardDictation();
   Speech.stop();
+  /* the recognizer captures for whichever persona is on screen (a pop-out
+     dictation stays pinned to its own), so listening moves with the selection */
+  if(document.body.getAttribute("data-voice") === "listening") VoiceState.set("listening", voiceListenTarget());
   refreshMic();
   refreshSpeaker();
   Ambient.refreshLang();   // ambient keeps running; the restart picks up this persona's locale
@@ -2010,7 +2072,7 @@ function renderMain(){
         <div class="swatches">${ACCENTS.map(c=>`<button class="sw ${state.accent===c?"on":""}" data-accent="${c}" style="background:${c}" aria-label="Accent ${c}"></button>`).join("")}</div>
       </div>
       ${toggleRow("lines","Reporting lines","Show the connectors between roles")}
-      ${toggleRow("motion","Character animation","Blinking and idle movement")}
+      ${toggleRow("motion","Mark animation","Idle breathing and voice movement")}
     </div>
 
     ${deptGroups}
@@ -2054,19 +2116,19 @@ function renderRolePane(){
     </div>`;
 
   $("#paneRole").innerHTML = `
-    <div class="gLabel">Character</div>
+    <div class="gLabel">Mark</div>
     <div class="group">
       <div class="editHero">${avatarSVG(r)}<div><div class="n">${esc(r.title)}</div><div class="d">${esc(d.name)}</div></div></div>
       <div class="row"><span class="k">Team</span>
         <select class="text" data-look="dept" style="text-align:right;border:0;background:none;color:var(--label2);font-size:15px">
           ${Object.keys(DEPTS).map(k=>`<option value="${k}" ${r.dept===k?"selected":""}>${DEPTS[k].name}</option>`).join("")}
         </select></div>
-      <div class="row" style="display:block"><span class="k">Skin</span>
-        <div class="swatches">${SKINS.map(c=>`<button class="sw ${L.skin===c?"on":""}" data-look-skin="${c}" style="background:${c}" aria-label="Skin tone"></button>`).join("")}</div></div>
-      <div class="row" style="display:block"><span class="k">Hair</span>
-        <div class="swatches">${HAIRS.map(c=>`<button class="sw ${L.hair===c?"on":""}" data-look-hair="${c}" style="background:${c}" aria-label="Hair color"></button>`).join("")}</div></div>
-      <button class="row" data-look-style="1"><span class="k">Hairstyle</span><span class="v">Style ${L.style+1} of 6</span>${CHEV}</button>
-      <button class="row" data-look-prop="1"><span class="k">Prop</span><span class="v">${L.prop==="none"?"None":L.prop[0].toUpperCase()+L.prop.slice(1)}</span>${CHEV}</button>
+      <div class="row" style="display:block"><span class="k">Mark color</span>
+        <div class="swatches">
+          <button class="sw ${L.skin?"":"on"}" data-look-skin="" style="background:${d.tint}" aria-label="Team color (default)"></button>
+          ${ACCENTS.map(c=>`<button class="sw ${L.skin===c?"on":""}" data-look-skin="${c}" style="background:${c}" aria-label="Mark color ${c}"></button>`).join("")}
+        </div></div>
+      <button class="row" data-look-style="1"><span class="k">Voiceprint<small>The waveform signature this persona idles at.</small></span><span class="v">Signature ${L.style+1} of 6</span>${CHEV}</button>
     </div>
 
     <div class="gLabel">Brief</div>
@@ -2218,7 +2280,7 @@ async function flushPersonaSave(){
       language:(r.language || "").trim(),
       voice:(r.voice || "").trim(),
       version:r.version || 1,
-      look:{ skin:r.look.skin, hair:r.look.hair, style:r.look.style, prop:r.look.prop }
+      look:{ skin:r.look.skin || "", style:r.look.style }
     }});
     if(res && res.version) r.version = Number(res.version) || r.version;
   }catch(err){
@@ -2408,6 +2470,10 @@ Dictation.onFinal = (t, conf) => {
 };
 Dictation.onState = s => {
   const listening = s === "listening";
+  /* the clear falls back to "listening" while ambient is still armed, so
+     handing the mic back after dictation never flickers the state off */
+  if(listening) VoiceState.set("listening", dictTarget.roleId || selectedId);
+  else VoiceState.clear("listening");
   const mic = dictTarget.mic;
   if(mic){
     mic.classList.toggle("listening", listening);
@@ -2721,6 +2787,9 @@ textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent
 .badgeView .lbl{font-size:11.5px;color:rgba(120,120,128,.95)}
 body.collapsed .thread,body.collapsed .composer{display:none}
 body.collapsed .badgeView{display:flex}
+.mk{transform-box:fill-box;transform-origin:50% 50%;animation:mkBreathe 5s ease-in-out infinite}
+@keyframes mkBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.02)}}
+@media (prefers-reduced-motion:reduce){.mk{animation:none}}
 `;
 const PopOut = {
   win:null, roleId:null, collapsed:false, missed:0, els:null, dict:null, _nT:null,
@@ -3000,6 +3069,7 @@ const Ambient = {
     if(!getToken()){ micNotice("Ambient listening needs the access token — add it in Settings › Chat."); return; }
     if(Dictation.active) discardDictation();
     this.armed = true; this.paused = false;
+    VoiceState.set("listening", selectedId);
     this.setStage("listening");
     this.startListening();
     clearInterval(this.watchdog);
@@ -3008,6 +3078,7 @@ const Ambient = {
   },
   disarm(msg){
     this.armed = false; this.paused = false;
+    VoiceState.clear("listening");
     this.stopListening();
     clearTimeout(this.flushTimer); this.flushTimer = null;
     clearTimeout(this.restartTimer); this.restartTimer = null;
@@ -3309,10 +3380,7 @@ $("#paneRole").addEventListener("click", e => {
   const t = e.target;
   const skin = t.closest("[data-look-skin]");
   if(skin){ r.look.skin = skin.dataset.lookSkin; touchRole(r); renderRolePane(); refreshAfterEdit(); return; }
-  const hair = t.closest("[data-look-hair]");
-  if(hair){ r.look.hair = hair.dataset.lookHair; touchRole(r); renderRolePane(); refreshAfterEdit(); return; }
   if(t.closest("[data-look-style]")){ r.look.style = (r.look.style + 1) % 6; touchRole(r); renderRolePane(); refreshAfterEdit(); return; }
-  if(t.closest("[data-look-prop]")){ r.look.prop = PROPS[(PROPS.indexOf(r.look.prop) + 1) % PROPS.length]; touchRole(r); renderRolePane(); refreshAfterEdit(); return; }
   const rm = t.closest("[data-chip-remove]");
   if(rm){ r.knowledge.splice(+rm.dataset.chipRemove, 1); touchRole(r); renderRolePane(); refreshAfterEdit(); return; }
   if(t.closest("[data-chip-add]")){ addChip(); return; }
@@ -3355,7 +3423,7 @@ function addRole(dept){
   state.roles.push({
     id, parent: lead ? lead.id : null, dept,
     title:"New role",
-    look:{ skin:SKINS[Math.floor(Math.random()*SKINS.length)], hair:HAIRS[Math.floor(Math.random()*HAIRS.length)], style:Math.floor(Math.random()*6), prop:"none" },
+    look:{ skin:"", style:Math.floor(Math.random()*6) },
     personality:"", context:"", task:"", knowledge:[], outcome:""
   });
   editingId = id; renderRolePane(); goDeep(true); renderChart();
