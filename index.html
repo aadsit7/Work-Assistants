@@ -15,6 +15,7 @@
   --shadow:0 1px 2px rgba(0,0,0,.05), 0 10px 30px rgba(0,0,0,.09);
   --shadow-lift:0 2px 4px rgba(0,0,0,.06), 0 18px 44px rgba(0,0,0,.14);
   --r:22px;
+  --railW:clamp(280px,22vw,340px);
   --spring:cubic-bezier(.32,.72,0,1);
   --sans:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
 }
@@ -34,9 +35,16 @@ body{
   display:flex; flex-direction:column;
   -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
 }
-.stage{flex:1;display:flex;min-height:0}
+/* App shell: both columns sit in one centered composition. On an ultrawide
+   monitor the shell stops at 1560px with even wash margins on both sides —
+   the columns never stretch to fill the screen. */
+.stage{
+  flex:1;display:flex;min-height:0;
+  width:100%;max-width:1560px;margin-inline:auto;
+}
+@media (min-width:1561px){ .stage{border-inline:.5px solid var(--sep)} }
 .canvas{
-  flex:none;width:clamp(320px,26vw,440px);min-width:0;
+  flex:none;width:var(--railW);min-width:0;
   display:flex;flex-direction:column;min-height:0;position:relative;
   border-right:.5px solid var(--sep);
 }
@@ -80,12 +88,54 @@ input,textarea{font-family:inherit}
 .seg.paneSwitch{display:none;flex:none}
 .paneSwitch button{min-width:64px}
 
-/* ---------- chart ---------- */
-/* Desktop: the chart lives in a narrow rail, so the heading collapses to a
-   small label and the intro line hides. Mobile restores the big heading. */
+/* ---------- rail + chart ---------- */
+/* Desktop: the rail is a vertical outline of the org — a horizontal tree can
+   never fit a narrow column, so the tree renders only in the "View chart"
+   overlay, where it has room. The heading collapses to a small label and the
+   intro line hides. Mobile restores the big heading and keeps the tree as its
+   Chart pane. */
 .head{padding:16px 16px 0;text-align:left;flex:none}
 .head h1{margin:0;font-size:11px;line-height:1.3;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--label3)}
 .head p{display:none;margin:7px auto 0;max-width:46ch;font-size:14px;color:var(--label2);line-height:1.45}
+.railBar{display:flex;align-items:center;padding:10px 16px 12px;border-bottom:.5px solid var(--sep);flex:none}
+.viewChart{
+  display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;
+  color:var(--accent);background:var(--field);padding:6px 12px;border-radius:999px;
+  transition:transform .3s var(--spring),filter .2s;
+}
+.viewChart:hover{filter:brightness(.96)}
+.viewChart:active{transform:scale(.95)}
+.viewChart svg{width:13px;height:13px}
+.outline{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:2px 0 26px;scrollbar-width:thin}
+.oLabel{
+  padding:18px 16px 7px;font-size:10.5px;font-weight:700;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--tint);
+}
+.oRow{
+  position:relative;display:flex;align-items:center;gap:10px;width:100%;
+  padding:8px 14px 8px 16px;text-align:left;transition:background .15s;
+}
+.oRow:hover{background:color-mix(in srgb,var(--label) 5%,transparent)}
+.oRow.sub{padding-left:32px}
+.oRow .avatar{width:28px;height:28px;flex:none}
+.oTitle{
+  flex:1;min-width:0;font-size:13.5px;font-weight:500;letter-spacing:-.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.oRow.is-selected{background:color-mix(in srgb,var(--tint) 10%,transparent)}
+.oRow.is-selected::before{
+  content:"";position:absolute;left:0;top:5px;bottom:5px;width:3px;
+  border-radius:0 2px 2px 0;background:var(--tint);
+}
+.oRow.is-selected .oTitle{font-weight:600}
+.oBadge{
+  min-width:19px;height:19px;padding:0 5px;border-radius:10px;flex:none;
+  background:var(--tint);color:#fff;font-size:10.5px;font-weight:700;
+  display:grid;place-items:center;
+}
+/* The tree and its zoom control travel together: hidden here on desktop,
+   shown in the mobile Chart pane, reparented into the overlay when it opens. */
+.chartWrap{display:none;flex-direction:column;flex:1;min-height:0;position:relative}
 .chartScroll{
   flex:1; overflow:auto; padding:22px 24px 70px;
   -webkit-overflow-scrolling:touch; scrollbar-width:thin;
@@ -177,7 +227,7 @@ body.no-motion .char,body.no-motion .eyes,body.no-motion .hand{animation:none}
    wide screen doesn't stretch the thread. Uncapped on mobile. */
 .paneCol{
   flex:1;min-height:0;display:flex;flex-direction:column;
-  width:100%;max-width:760px;margin-inline:auto;
+  width:100%;max-width:720px;margin-inline:auto;
 }
 .cardTop{
   padding:20px 20px 16px;display:flex;gap:14px;align-items:center;flex:none;
@@ -339,17 +389,21 @@ body.dark .pill.ok{color:#5FD97C}
 }
 .connDot.on{background:#34C759;box-shadow:0 0 0 3px color-mix(in srgb,#34C759 20%,transparent)}
 .appBanner[hidden]{display:none}
-.appBanner{
-  flex:none;display:flex;align-items:center;gap:10px;padding:9px 20px;
-  font-size:13px;line-height:1.45;color:var(--label2);
-  background:color-mix(in srgb,var(--accent) 8%,var(--card));
-  border-bottom:.5px solid var(--sep);
+/* Desktop: a quiet one-line status note under the nav, left-aligned to the
+   messenger's content column — not a full-bleed strip. Mobile restores the
+   original strip. */
+.appBanner{flex:none;font-size:12.5px;line-height:1.45;color:var(--label2)}
+.bannerShell{max-width:1560px;margin-inline:auto}
+.bannerRow{
+  display:flex;align-items:flex-start;gap:8px;
+  padding:8px 20px 6px calc(var(--railW) + max(0px,(100% - var(--railW) - 720px)/2) + 16px);
 }
-.appBanner .txt{flex:1;min-width:0}
+.bDot{width:6px;height:6px;border-radius:50%;background:var(--label3);flex:none;margin-top:6px}
+.appBanner .txt{min-width:0}
 .appBanner .txt b{color:var(--label);font-weight:600}
 .appBanner .x{
-  width:22px;height:22px;border-radius:50%;background:var(--field);color:var(--label2);
-  font-size:11px;line-height:1;display:grid;place-items:center;flex:none;
+  width:18px;height:18px;border-radius:50%;background:var(--field);color:var(--label2);
+  font-size:10px;line-height:1;display:grid;place-items:center;flex:none;align-self:center;
   transition:transform .3s var(--spring);
 }
 .appBanner .x:active{transform:scale(.86)}
@@ -376,7 +430,7 @@ body.no-motion .spinner{animation-duration:1.6s}
 .card.chatting .chat{display:flex}
 .thread{
   flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
-  padding:14px 16px 12px;display:flex;flex-direction:column;gap:8px;
+  padding:8px 16px 12px;display:flex;flex-direction:column;gap:8px;
 }
 .stamp{align-self:center;font-size:11px;color:var(--label3);padding:2px 0 8px}
 .clearBar{align-self:center;padding-bottom:4px}
@@ -397,7 +451,10 @@ body.no-motion .spinner{animation-duration:1.6s}
 .dots i:nth-child(2){animation-delay:.16s}
 .dots i:nth-child(3){animation-delay:.32s}
 @keyframes dot{0%,60%,100%{opacity:.32;transform:translateY(0)}30%{opacity:1;transform:translateY(-4px)}}
-.empty{margin:auto 0;text-align:center;padding:10px 4px}
+/* Desktop: the empty state doesn't float in the vertical center of a tall
+   pane — it anchors above the composer, in the lower reach of the thread.
+   Mobile restores the centered version. */
+.empty{margin:auto auto clamp(20px,6vh,56px);width:100%;max-width:440px;text-align:center;padding:10px 4px}
 .empty .avatar{width:78px;height:78px;margin:0 auto 10px}
 .empty h4{margin:0 0 6px;font-size:17px;font-weight:600;letter-spacing:-.015em}
 .empty p{margin:0 auto 16px;font-size:13.5px;color:var(--label2);line-height:1.45;max-width:30ch}
@@ -418,14 +475,16 @@ body.no-motion .spinner{animation-duration:1.6s}
   font-size:15px;line-height:1.4;color:var(--label);resize:none;height:41px;max-height:124px;
 }
 .composer textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent)}
-/* mirror of the textarea: committed text transparent, interim words lighter */
-.ghost{
+/* mirror of the textarea: committed text transparent, interim words lighter.
+   Named dictGhost — a plain .ghost class collides with the .wideBtn.ghost
+   button variant and stretches that button over the whole card. */
+.dictGhost{
   position:absolute;inset:0;border-radius:20px;padding:10px 14px;
   font-size:15px;line-height:1.4;white-space:pre-wrap;overflow-wrap:break-word;
   overflow:hidden;pointer-events:none;color:transparent;
 }
-.ghost[hidden]{display:none}
-.ghost .int{color:var(--label3);background:var(--field);border-radius:3px}
+.dictGhost[hidden]{display:none}
+.dictGhost .int{color:var(--label3);background:var(--field);border-radius:3px}
 .mic{
   width:34px;height:34px;border-radius:50%;background:var(--field);color:var(--label2);
   display:grid;place-items:center;flex:none;margin-bottom:4px;position:relative;
@@ -477,6 +536,18 @@ body.no-motion .spinner{animation-duration:1.6s}
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .noHits{text-align:center;color:var(--label3);font-size:14px;padding:34px 20px}
 
+/* ---------- chart overlay ---------- */
+.sheet.chartSheet{
+  width:min(1560px,calc(100vw - 48px));height:min(880px,calc(100dvh - 64px));
+  background:var(--wash);
+}
+.chartHost{flex:1;min-height:0;display:flex;flex-direction:column;position:relative}
+.chartHost .chartWrap{display:flex}
+/* Center the tree in the roomy overlay; auto margins collapse to 0 when the
+   tree overflows, so scrolling still starts at the true edge. */
+.chartHost .chartScroll{display:flex}
+.chartHost .tree{margin:auto}
+
 /* ---------- responsive ---------- */
 @media (max-width:900px){
   .seg.paneSwitch{display:flex}
@@ -490,13 +561,28 @@ body.no-motion .spinner{animation-duration:1.6s}
     transform:translateY(102%) scale(1);
   }
   .sheet.on{transform:translateY(0)}
-  /* Mobile keeps the pre-rail layout: full-width panes, big heading, 82% bubbles. */
+  /* Mobile keeps the pre-rail layout: full-width panes, big heading, the tree
+     as the Chart pane, centered empty state, and the full-width banner strip. */
   .canvas{flex:1;width:auto;border-right:0}
+  .railBar,.outline{display:none}
+  .chartWrap{display:flex}
   .paneCol{max-width:none}
   .bubble{max-width:82%}
+  .thread{padding-top:14px}
+  .empty{margin:auto 0;max-width:none}
   .head{text-align:center;padding:26px 20px 2px}
   .head h1{font-size:27px;font-weight:700;letter-spacing:-.026em;text-transform:none;color:var(--label);line-height:1.12}
   .head p{display:block;font-size:13px}
+  .appBanner{
+    display:block;padding:9px 20px;font-size:13px;
+    background:color-mix(in srgb,var(--accent) 8%,var(--card));
+    border-bottom:.5px solid var(--sep);
+  }
+  .bannerShell{max-width:none}
+  .bannerRow{display:flex;align-items:center;gap:10px;padding:0}
+  .bDot{display:none}
+  .appBanner .txt{flex:1}
+  .appBanner .x{width:22px;height:22px;font-size:11px}
 }
 
 </style>
@@ -524,8 +610,11 @@ body.no-motion .spinner{animation-duration:1.6s}
 </nav>
 
 <div class="appBanner" id="appBanner" hidden>
-  <span class="txt" id="appBannerText"></span>
-  <button class="x" id="appBannerClose" aria-label="Dismiss">✕</button>
+  <div class="bannerShell"><div class="bannerRow">
+    <span class="bDot" aria-hidden="true"></span>
+    <span class="txt" id="appBannerText"></span>
+    <button class="x" id="appBannerClose" aria-label="Dismiss">✕</button>
+  </div></div>
 </div>
 
 <div class="stage">
@@ -535,10 +624,19 @@ body.no-motion .spinner{animation-duration:1.6s}
       <h1 id="pageTitle">Who does what</h1>
       <p id="pageSub">Pick anyone to start a conversation.</p>
     </header>
-    <main class="chartScroll"><div class="tree" id="tree"></div></main>
-    <div class="zoomBar">
-      <button data-zoom="-1" aria-label="Zoom out">&minus;</button>
-      <button data-zoom="1" aria-label="Zoom in">+</button>
+    <div class="railBar">
+      <button class="viewChart" id="viewChart">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="5" rx="1.5"/><rect x="3" y="16" width="6" height="5" rx="1.5"/><rect x="15" y="16" width="6" height="5" rx="1.5"/><path d="M12 8v3M6 16v-2.5h12V16"/></svg>
+        View chart
+      </button>
+    </div>
+    <nav class="outline" id="outline" aria-label="Team outline"></nav>
+    <div class="chartWrap" id="chartWrap">
+      <main class="chartScroll"><div class="tree" id="tree"></div></main>
+      <div class="zoomBar">
+        <button data-zoom="-1" aria-label="Zoom out">&minus;</button>
+        <button data-zoom="1" aria-label="Zoom in">+</button>
+      </div>
     </div>
   </div>
 
@@ -566,7 +664,7 @@ body.no-motion .spinner{animation-duration:1.6s}
     <div class="micNotice" id="micNotice" hidden aria-hidden="true"></div>
     <div class="composerBox">
       <textarea id="composerInput" rows="1" placeholder="Message" aria-label="Message"></textarea>
-      <div class="ghost" id="composerGhost" hidden aria-hidden="true"></div>
+      <div class="dictGhost" id="composerGhost" hidden aria-hidden="true"></div>
     </div>
     <button class="mic" id="mic" hidden aria-label="Start dictation" aria-pressed="false">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
@@ -582,6 +680,16 @@ body.no-motion .spinner{animation-duration:1.6s}
 
 <div class="scrim" id="scrim"></div>
 
+
+<!-- org chart overlay (desktop) -->
+<section class="sheet chartSheet" id="chartOverlay" role="dialog" aria-modal="true" aria-label="Org chart">
+  <div class="sheetNav">
+    <button class="navAct" hidden aria-hidden="true"></button>
+    <div class="t">Org chart</div>
+    <button class="navAct right" id="chartClose">Done</button>
+  </div>
+  <div class="chartHost" id="chartHost"></div>
+</section>
 
 <!-- role picker -->
 <section class="sheet picker" id="picker" role="dialog" aria-modal="true" aria-label="Switch role">
@@ -930,9 +1038,41 @@ function branch(role){
   const isRoot = role.parent === null;
   return `<li>${nodeHTML(role, isRoot)}${kids.length ? `<ul>${kids.map(branch).join("")}</ul>` : ""}</li>`;
 }
+/* Desktop rail: a vertical outline grouped by department — managers first,
+   their in-department reports indented one step under them. */
+function outlineRow(role, sub){
+  const d = deptOf(role);
+  const asked = (threads[role.id] || []).filter(m => m.role === "user").length;
+  return `<button class="oRow ${sub ? "sub" : ""} ${selectedId === role.id ? "is-selected" : ""}"
+      style="--tint:${d.tint}" data-id="${role.id}" ${selectedId === role.id ? 'aria-current="true"' : ""}
+      aria-label="${esc(role.title)}, ${esc(d.name)}">
+      ${avatarSVG(role)}
+      <span class="oTitle">${esc(role.title)}</span>
+      ${asked ? `<span class="oBadge">${asked}</span>` : ""}
+    </button>`;
+}
+function renderOutline(){
+  const byDept = {};
+  state.roles.forEach(r => (byDept[r.dept] = byDept[r.dept] || []).push(r));
+  $("#outline").innerHTML = Object.keys(DEPTS).filter(k => byDept[k]).map(k => {
+    const group = byDept[k];
+    const inGroup = id => group.some(g => g.id === id);
+    const rows = [];
+    const walk = (r, sub) => {
+      rows.push(outlineRow(r, sub));
+      group.filter(c => c.parent === r.id).forEach(c => walk(c, true));
+    };
+    group.filter(r => !r.parent || !inGroup(r.parent)).forEach(r => walk(r, false));
+    return `<div class="oGroup">
+        <div class="oLabel" style="--tint:${DEPTS[k].tint}">${esc(DEPTS[k].name)}</div>
+        ${rows.join("")}
+      </div>`;
+  }).join("");
+}
 function renderChart(){
   const root = rootRole();
   $("#tree").innerHTML = root ? `<ul>${branch(root)}</ul>` : "";
+  renderOutline();
   autoFit();
 }
 function applyChrome(){
@@ -1312,6 +1452,8 @@ function selectRole(id){
   const r = roleById(id) || rootRole();
   selectedId = r.id;
   renderChart(); renderCard();
+  const sel = $(".oRow.is-selected");
+  if(sel) sel.scrollIntoView({block:"nearest"});
   discardDictation();
   refreshMic();
   const input = $("#composerInput");
@@ -1328,6 +1470,27 @@ function showPane(pane){
   seg.classList.toggle("b", pane === "chart");
   seg.querySelectorAll("[data-pane]").forEach(b =>
     b.setAttribute("aria-pressed", String(b.dataset.pane === pane)));
+}
+
+/* Desktop chart overlay: the tree's only home on desktop. #chartWrap moves
+   between its (hidden) rail slot and the overlay so IDs stay unique and the
+   zoom wiring travels with it; the swap back waits out the close transition. */
+let chartRestoreTimer = null;
+function chartOpen(){ return $("#chartOverlay").classList.contains("on"); }
+function openChart(){
+  clearTimeout(chartRestoreTimer);
+  $("#chartHost").appendChild($("#chartWrap"));
+  $("#chartOverlay").classList.add("on");
+  $("#scrim").classList.add("on");
+  autoFit();
+  setTimeout(() => $("#chartClose").focus(), 380);
+}
+function closeChart(){
+  if(!chartOpen()) return;
+  $("#chartOverlay").classList.remove("on");
+  if(!$("#sheet").classList.contains("on") && !$("#picker").classList.contains("on")) $("#scrim").classList.remove("on");
+  chartRestoreTimer = setTimeout(() => $(".canvas").appendChild($("#chartWrap")), 340);
+  $("#viewChart").focus();
 }
 
 /* ========== settings: main pane ========== */
@@ -1583,7 +1746,14 @@ async function flushPersonaSave(){
 $("#tree").addEventListener("click", e => {
   const n = e.target.closest(".node"); if(!n) return;
   selectRole(n.dataset.id);
+  if(chartOpen()) closeChart();
 });
+$("#outline").addEventListener("click", e => {
+  const b = e.target.closest(".oRow"); if(!b) return;
+  selectRole(b.dataset.id);
+});
+$("#viewChart").addEventListener("click", openChart);
+$("#chartClose").addEventListener("click", closeChart);
 $("#paneSwitch").addEventListener("click", e => {
   const b = e.target.closest("[data-pane]"); if(b) showPane(b.dataset.pane);
 });
@@ -1593,7 +1763,11 @@ $(".zoomBar").addEventListener("click", e => {
   zoomIdx = Math.max(0, Math.min(ZOOMS.length - 1, zoomIdx + Number(b.dataset.zoom)));
   applyZoom();
 });
-addEventListener("resize", () => { autoFit(); if(innerWidth > 900) showPane("chat"); });
+addEventListener("resize", () => {
+  autoFit();
+  if(innerWidth > 900) showPane("chat");
+  else closeChart();
+});
 $("#cardEdit").addEventListener("click", () => openSettings(selectedId));
 $("#cardTop").addEventListener("click", openPicker);
 $("#pickerDone").addEventListener("click", closePicker);
@@ -1748,11 +1922,13 @@ $("#back").addEventListener("click", () => { renderMain(); goDeep(false); });
 $("#scrim").addEventListener("click", () => {
   if($("#sheet").classList.contains("on")) closeSettings();
   else if($("#picker").classList.contains("on")) closePicker();
+  else if(chartOpen()) closeChart();
 });
 addEventListener("keydown", e => {
   if(e.key !== "Escape") return;
   if($("#sheet").classList.contains("on")){ $("#panes").classList.contains("deep") ? (renderMain(), goDeep(false)) : closeSettings(); }
   else if($("#picker").classList.contains("on")) closePicker();
+  else if(chartOpen()) closeChart();
 });
 
 /* main pane interactions */
