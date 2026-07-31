@@ -207,8 +207,8 @@ body.no-lines .tree ul ul::before{border-color:transparent}
 @keyframes wave{0%,100%{transform:rotate(0)}25%{transform:rotate(-22deg)}60%{transform:rotate(16deg)}}
 body.no-motion .char,body.no-motion .eyes,body.no-motion .hand{animation:none}
 @media (prefers-reduced-motion:reduce){
-  .char,.eyes,.hand{animation:none!important}
-  .mic.listening::after{animation:none!important;opacity:.6;transform:scale(1.1)}
+  .char,.eyes,.hand,.ambientDot{animation:none!important}
+  .mic.listening::after,.speak.pulse::after{animation:none!important;opacity:.6;transform:scale(1.1)}
   *{transition-duration:.01ms!important}
 }
 
@@ -549,6 +549,41 @@ body.no-motion .spinner{animation-duration:1.6s}
 /* jump-to-message highlight from history search */
 .msg.hl .bubble{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 55%,transparent)}
 
+/* ---------- ambient listening ---------- */
+.speak.pulse{position:relative}
+.speak.pulse::after{
+  content:"";position:absolute;inset:-3px;border-radius:50%;
+  border:2px solid var(--accent);opacity:0;
+  animation:micPulse 1.6s ease-out infinite;
+}
+.ambientBand{
+  display:flex;align-items:center;gap:9px;padding:7px 16px;flex:none;
+  border-top:.5px solid var(--sep);
+  background:color-mix(in srgb,var(--accent) 7%,var(--card));
+  font-size:12.5px;
+}
+.ambientBand[hidden]{display:none}
+.ambientDot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none;animation:ambPulse 1.6s ease-in-out infinite}
+.ambientDot.busy{background:#F08C00}
+@keyframes ambPulse{0%,100%{opacity:.4}50%{opacity:1}}
+.ambientTxt{flex:1;min-width:0;display:flex;gap:6px;align-items:baseline}
+.ambientTxt b{font-size:12px;flex:none}
+.ambientTxt span{color:var(--label2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-style:italic}
+.ambientQ{font-size:11px;font-weight:700;color:#fff;background:var(--accent);border-radius:9px;padding:2px 7px;flex:none}
+.ambientQ[hidden]{display:none}
+.ambientBand button{font-size:12px;color:var(--accent);font-weight:600;flex:none;padding:2px 6px;border-radius:7px}
+.ambientBand button:active{background:var(--field)}
+.ambLog{max-height:180px;overflow-y:auto;border-top:.5px solid var(--sep);background:var(--card);flex:none;padding:4px 0}
+.ambLog[hidden]{display:none}
+.ambRow{display:flex;gap:8px;padding:5px 16px;font-size:12px;line-height:1.35;align-items:flex-start}
+.ambRow .ico{flex:none;width:15px;text-align:center;font-weight:700}
+.ambRow.ok .ico{color:#28A745}
+.ambRow.no .ico{color:var(--label3)}
+.ambRow.bad .ico{color:var(--danger)}
+.ambRow .t{flex:1;min-width:0;color:var(--label)}
+.ambRow small{display:block;color:var(--label3)}
+body.no-motion .ambientDot,body.no-motion .speak.pulse::after{animation:none}
+
 /* ---------- history ---------- */
 .sheet.history{height:min(680px,calc(100dvh - 120px))}
 .histThread{display:flex;flex-direction:column;gap:8px;padding:14px 2px 6px}
@@ -687,6 +722,9 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
     <svg class="pickChev" viewBox="0 0 14 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l6 6 6-6"/></svg>
   </button>
   <div class="headBtns">
+  <button class="speak" id="ambientBtn" hidden aria-pressed="false" aria-label="Ambient listening" title="Ambient listening — answers questions it overhears">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg>
+  </button>
   <button class="speak" id="pipBtn" hidden aria-label="Pop out this chat" title="Pop out this chat">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H14"/><path d="M4 6.5V16a3 3 0 0 0 3 3h9.5"/><rect x="10" y="9.5" width="10" height="8" rx="2"/></svg>
   </button>
@@ -703,7 +741,16 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
     </div>
   </div>
   <div class="cardBody" id="cardBody"></div>
-  <div class="chat" id="chat"><div class="thread" id="thread"></div></div>
+  <div class="chat" id="chat">
+    <div class="thread" id="thread"></div>
+    <div class="ambLog" id="ambLog" hidden aria-label="Ambient decision log"></div>
+    <div class="ambientBand" id="ambientBand" hidden>
+      <span class="ambientDot" aria-hidden="true"></span>
+      <div class="ambientTxt"><b id="ambientState">Listening</b><span id="ambientDetail">for questions to answer…</span></div>
+      <span class="ambientQ" id="ambientQueue" hidden></span>
+      <button id="ambientLogBtn" aria-expanded="false">Log</button>
+    </div>
+  </div>
   <div class="cardFoot" id="footBrief"><button class="wideBtn ghost" id="cardEdit">Edit this role</button></div>
   <div class="composer">
     <div class="micNotice" id="micNotice" hidden aria-hidden="true"></div>
@@ -1210,11 +1257,23 @@ function applyChrome(){
      { action:"chat", roleId, roleTitle, company, system, promptHash,
        promptVersion, personaVersion, temperature, webSearch,
        messages:[{role,content}] }        -> { "reply": "text" }
+     { action:"classify", roleId, roleTitle, company, task, context,
+       utterance, recent, instruction }   -> { needs_answer, normalized_question,
+                                              confidence, topic, reason }
 
    webSearch asks the server to let the model search the web while
    answering. When a chat call fails, the app retries the same
    question once with webSearch:false before showing an error — a
    server that ignores the flag simply gets the same request twice.
+
+   classify is the ambient-listening gate. The server must run it on
+   the cheap model (model choice and the key stay server-side) with a
+   JSON response schema matching the shape above: needs_answer is a
+   boolean, confidence is 0..1, normalized_question rewrites the
+   utterance into a clean self-contained question, resolving follow-up
+   references against `recent`. `task` and `context` come from the
+   persona and define what is in scope; `instruction` carries the
+   err-toward-answering guidance verbatim.
 
    The server rebuilds the prompt from the Personas tab and compares
    fingerprints; a mismatch is rejected as STALE_BRIEF rather than
@@ -1747,16 +1806,20 @@ function cancelAnswer(roleId, silent){
   if(silent) ctl.silent = true;   // abort without leaving a "stopped" note (used by Clear)
   ctl.abort();
 }
-/* One send pipeline for every composer. `src.input` is the composer the text
-   came from (undefined for starters); answers land in the persona's thread no
-   matter which window asked. Answers to different personas can be in flight
-   at once — pending/inflight are per persona, so the pop-out and the main
-   composer never trip over each other. */
+/* One send pipeline for every asker. `src.input` is the composer the text
+   came from (undefined for starters and ambient asks); answers land in the
+   persona's thread no matter which window asked. Answers to different
+   personas can be in flight at once — pending/inflight are per persona, so
+   the pop-out and the main composer never trip over each other.
+   src.vm overrides the channel metadata (ambient asks log channel "voice"
+   with the classifier confidence); src.speak forces the reply through TTS
+   regardless of the per-persona speaker toggle. Returns the outcome:
+   "answered" | "failed" | "canceled" | "blocked". */
 async function sendTo(roleId, text, src){
   const r = roleById(roleId);
-  if(!r || !text.trim() || pending.has(roleId)) return;
+  if(!r || !text.trim() || pending.has(roleId)) return "blocked";
   const built = buildPrompt(r);
-  if(built.missing.length){ if(selectedId === roleId) renderThread(); return; }
+  if(built.missing.length){ if(selectedId === roleId) renderThread(); return "blocked"; }
   if(!pinned[r.id]) pinned[r.id] = built.hash;
   const input = src && src.input;
   /* per-message channel flag: "voice" only when this composer draft was
@@ -1765,8 +1828,9 @@ async function sendTo(roleId, text, src){
   if(Dictation.active && dictInterimLen && dictTarget.input === input){
     voiceMeta.dictated = true; voiceMeta.target = input;
   }
-  const vm = input && text === input.value && voiceMeta.target === input
-    ? consumeVoiceMeta() : { channel:"chat" };
+  const vm = (src && src.vm) ? src.vm
+    : (input && text === input.value && voiceMeta.target === input
+      ? consumeVoiceMeta() : { channel:"chat" });
   if(input && dictTarget.input === input) discardDictation();
   Speech.stop();
   threads[roleId] = threads[roleId] || [];
@@ -1779,12 +1843,15 @@ async function sendTo(roleId, text, src){
      you didn't cause, not for the message you just wrote */
   if(selectedId === roleId){ renderThread(); const b = $("#thread"); b.scrollTop = b.scrollHeight; }
   renderChart(); PopOut.render(); refreshSendUI();
+  let outcome = "answered";
   try{
     const reply = await Agent.reply(r, threads[roleId], ctl.signal);
     (threads[roleId] = threads[roleId] || []).push({ role:"assistant", content:reply, at:Date.now() });
-    /* speak only if this conversation is still the one on screen */
-    if(selectedId === roleId && tab === "chat" && ttsOn(roleId)) Speech.speakReply(r, reply);
+    /* speak if this conversation is on screen with the speaker on, or the
+       asker (ambient) asked for it outright */
+    if((selectedId === roleId && tab === "chat" && ttsOn(roleId)) || (src && src.speak)) Speech.speakReply(r, reply);
   }catch(err){
+    outcome = err.canceled ? "canceled" : "failed";
     if(!(err.canceled && ctl.silent)){
       (threads[roleId] = threads[roleId] || []).push(err.canceled
         ? { role:"assistant", error:true, note:true, at:Date.now(), content:"You stopped this answer." }
@@ -1798,6 +1865,7 @@ async function sendTo(roleId, text, src){
     renderChart(); refreshSendUI();
     PopOut.onAnswer(roleId);
   }
+  return outcome;
 }
 function sendMessage(text){
   sendTo(selectedId, text, {
@@ -1856,6 +1924,8 @@ function selectRole(id){
   Speech.stop();
   refreshMic();
   refreshSpeaker();
+  Ambient.refreshLang();   // ambient keeps running; the restart picks up this persona's locale
+  renderAmbient();
   const input = $("#composerInput");
   input.value = ""; input.style.height = "41px";
   input.placeholder = "Message " + r.title;
@@ -2356,6 +2426,7 @@ Dictation.onState = s => {
     renderGhost();
     dictDiscard = false;
     if(!Dictation._erred) dictTarget.status("Dictation stopped.");
+    Ambient.resumeAfterDictation();   // give the recognition slot back
   }
 };
 Dictation.onError = msg => {
@@ -2373,6 +2444,7 @@ micBtn.addEventListener("click", () => {
   if(Dictation.active){ Dictation.stop(); return; }
   dictTarget = mainDict;
   micNoticeEl.hidden = true;
+  Ambient.pauseForDictation();   // one recognition slot: ambient yields to dictation
   Dictation.start();
 });
 
@@ -2728,6 +2800,7 @@ const PopOut = {
       if(Dictation.active){ Dictation.stop(); return; }
       dictTarget = this.dict;
       this.els.notice.hidden = true;
+      Ambient.pauseForDictation();
       Dictation.start();
     });
     this.els.copy.addEventListener("click", () => this.copyLast());
@@ -2868,6 +2941,322 @@ function syncPip(){
   else PopOut.close();
 }
 $("#pipBtn").addEventListener("click", () => PopOut.open(selectedId));
+
+/* =================================================================
+   AMBIENT — always-on listening that answers questions it overhears.
+
+   MICROPHONE ONLY, on purpose: computer-audio capture and local
+   Whisper both need COOP/COEP isolation headers that GitHub Pages
+   cannot set, so the only capture path is the same Web Speech engine
+   dictation uses. Off by default; one click arms it.
+
+   Pipeline: final fragments accumulate in a buffer (EchoGuard drops
+   anything that is our own TTS). The buffer flushes after 1400ms of
+   silence — 900ms when it already reads as a complete question — or
+   immediately once it hits the run-on cap. Fragments under 6 chars
+   or 2 words are ignored. A flushed utterance gets the persona's
+   vocabulary fixes, is deduped against the last 8 seconds, and then
+   queues for the classifier gate: one cheap-model call (action
+   "classify") returning needs_answer / normalized_question /
+   confidence / topic / reason, scoped by the persona's Task and
+   Context and instructed to err toward answering. At or above 0.45
+   confidence the normalized question goes through the normal answer
+   pipeline (full brief, search retry chain) with channel "voice" and
+   the classifier confidence logged, and the reply is spoken.
+
+   THIS MUST NEVER GET STUCK: the classifier call is bounded at 15s
+   and each answer attempt at CHAT_TIMEOUT_MS; a 4-second watchdog
+   resets any stage that outlives its ceiling. The answer ceiling
+   deliberately exceeds the SUM of the full retry chain (2 ×
+   CHAT_TIMEOUT_MS), not one call — a tighter ceiling would abort
+   legitimate retries on slow networks. Every heard question ends in
+   the decision log as answered, rejected, duplicate, dropped, or
+   failed — an answer or a visible failure, never silence.
+================================================================= */
+const AMBIENT = {
+  FLUSH_MS: 1400, FLUSH_QUESTION_MS: 900,
+  MIN_CHARS: 6, MIN_WORDS: 2, BUFFER_CAP: 360,
+  DEDUPE_MS: 8000, QUEUE_CAP: 5, CONF_MIN: 0.45,
+  CLASSIFY_TIMEOUT_MS: 15000, LOG_KEEP: 12
+};
+const QUESTION_OPENER = /^(who|what|when|where|why|how|which|is|are|was|were|am|do|does|did|can|could|should|would|will|shall|have|has|tell me|walk me|give me|explain)\b/i;
+function looksLikeQuestion(t){
+  const s = t.trim();
+  if(/\?\s*$/.test(s)) return true;
+  return QUESTION_OPENER.test(s) && s.split(/\s+/).length >= 4;
+}
+const Ambient = {
+  armed:false, paused:false, session:null,
+  buffer:"", interim:"", flushTimer:null, restartTimer:null, lastStart:0,
+  stage:"listening", stageAt:0, stageText:"", stageCtl:null, current:null, _wd:false,
+  queue:[], busy:false, recent:[], decisions:[], watchdog:null,
+  /* tunable, not const: the watchdog geometry is part of the behavior */
+  WATCH_TICK_MS: 4000,
+  CLASSIFY_CEILING_MS: 20000,     // one 15s classifier call + margin
+  ANSWER_CEILING_MS: 100000,      // > 2 × CHAT_TIMEOUT_MS: the whole retry chain + margin
+  supported(){ return SPEECH_ENGINES.browser_native.supported(); },
+  arm(){
+    if(this.armed || !this.supported()) return;
+    if(!getToken()){ micNotice("Ambient listening needs the access token — add it in Settings › Chat."); return; }
+    if(Dictation.active) discardDictation();
+    this.armed = true; this.paused = false;
+    this.setStage("listening");
+    this.startListening();
+    clearInterval(this.watchdog);
+    this.watchdog = setInterval(() => this.tick(), this.WATCH_TICK_MS);
+    refreshAmbient();
+  },
+  disarm(msg){
+    this.armed = false; this.paused = false;
+    this.stopListening();
+    clearTimeout(this.flushTimer); this.flushTimer = null;
+    clearTimeout(this.restartTimer); this.restartTimer = null;
+    clearInterval(this.watchdog); this.watchdog = null;
+    if(this.stageCtl){ try{ this.stageCtl.abort(); }catch(e){} this.stageCtl = null; }
+    this.buffer = ""; this.interim = ""; this.queue.length = 0; this.busy = false; this.current = null;
+    this.setStage("listening");
+    if(msg) micNotice(msg);
+    refreshAmbient();
+  },
+  /* dictation and ambient share the one microphone/recognition slot */
+  pauseForDictation(){
+    if(!this.armed || this.paused) return;
+    this.paused = true;
+    this.stopListening();
+    renderAmbient();
+  },
+  resumeAfterDictation(){
+    if(!this.armed || !this.paused) return;
+    this.paused = false;
+    this.startListening();
+    renderAmbient();
+  },
+  /* persona switched: next session picks up the new dictation language */
+  refreshLang(){
+    if(this.armed && !this.paused && this.session) this.stopListening();  // onEnd restarts
+  },
+  startListening(){
+    if(!this.armed || this.paused || this.session) return;
+    const r = roleById(selectedId);
+    const lang = (r && String(r.language || "").trim()) || "en-US";
+    this.lastStart = Date.now();
+    try{
+      this.session = SPEECH_ENGINES.browser_native.start(lang, {
+        interim: t => { this.interim = t; renderAmbient(); },
+        final: t => this.onFragment(t),
+        error: code => this.onErr(code),
+        end: () => this.onEnd()
+      });
+    }catch(e){ this.session = null; this.scheduleRestart(); }
+  },
+  stopListening(){
+    const s = this.session;
+    this.session = null;
+    if(s){ try{ s.stop(); }catch(e){} }
+  },
+  onEnd(){
+    this.session = null;
+    if(this.armed && !this.paused) this.scheduleRestart();
+  },
+  scheduleRestart(){
+    clearTimeout(this.restartTimer);
+    /* the engine ends itself periodically; back off only when it's bouncing */
+    const delay = Date.now() - this.lastStart < 1500 ? 2000 : 250;
+    this.restartTimer = setTimeout(() => this.startListening(), delay);
+  },
+  onErr(code){
+    if(code === "aborted") return;
+    if(code === "not-allowed" || code === "service-not-allowed"){
+      this.disarm("Microphone access is off — ambient listening stopped.");
+    }
+    /* anything transient (no-speech, network): onEnd restarts the session */
+  },
+  onFragment(t){
+    if(!this.armed || !t.trim()) return;
+    this.interim = "";
+    if(EchoGuard.isEcho(t)) return;              // our own TTS — never re-trigger
+    this.buffer = (this.buffer ? this.buffer + " " : "") + t.trim();
+    if(this.buffer.length >= AMBIENT.BUFFER_CAP){ this.flush(); return; }   // run-on cap
+    clearTimeout(this.flushTimer);
+    this.flushTimer = setTimeout(() => this.flush(),
+      looksLikeQuestion(this.buffer) ? AMBIENT.FLUSH_QUESTION_MS : AMBIENT.FLUSH_MS);
+    renderAmbient();
+  },
+  flush(){
+    clearTimeout(this.flushTimer); this.flushTimer = null;
+    const raw = this.buffer.trim();
+    this.buffer = ""; this.interim = "";
+    renderAmbient();
+    if(!raw) return;
+    const text = correctTranscript(raw);
+    if(text.length < AMBIENT.MIN_CHARS || text.split(/\s+/).length < AMBIENT.MIN_WORDS) return;
+    const norm = EchoGuard.norm(text);
+    const now = Date.now();
+    this.recent = this.recent.filter(e => now - e.at < AMBIENT.DEDUPE_MS);
+    if(this.recent.some(e => EchoGuard.match(norm, e.norm))){
+      this.log("dup", text, "near-identical utterance within 8s");
+      return;
+    }
+    this.recent.push({ norm, at: now });
+    this.enqueue({ text, roleId: selectedId, at: now });
+  },
+  enqueue(item){
+    if(this.queue.length >= AMBIENT.QUEUE_CAP){
+      const dropped = this.queue.shift();
+      this.log("drop", dropped.text, "queue full — oldest dropped");
+      micNotice("Ambient queue full — dropped the oldest question.");
+    }
+    this.queue.push(item);
+    renderAmbient();
+    this.pump();
+  },
+  async pump(){
+    if(this.busy || !this.armed || !this.queue.length) return;
+    this.busy = true;
+    const item = this.current = this.queue.shift();
+    try{ await this.process(item); }
+    catch(e){ this.log("fail", item.text, "pipeline error: " + e.message); }
+    finally{
+      this.busy = false; this.current = null; this.stageCtl = null; this._wd = false;
+      this.setStage("listening");
+      if(this.queue.length) this.pump();
+    }
+  },
+  async process(item){
+    this.setStage("classifying", item.text);
+    const ctl = this.stageCtl = new AbortController();
+    let v;
+    try{ v = await this.classify(item, ctl.signal); }
+    catch(err){
+      this.log("fail", item.text, ctl.watchdog
+        ? "watchdog reset — the classifier hung past its ceiling"
+        : "classifier " + (err.timeout ? "timed out" : "failed: " + err.message));
+      return;
+    }
+    const conf = " (" + Math.round(v.confidence * 100) + "%)";
+    if(!v.needs_answer || v.confidence < AMBIENT.CONF_MIN){
+      this.log("no", item.text, (v.reason || "not a question for this role") + conf);
+      return;
+    }
+    const q = v.normalized_question || item.text;
+    this.log("ok", q, (v.topic ? v.topic + " — " : "") + "answering" + conf);
+    /* the persona may already be answering a typed message — wait our turn */
+    const waitUntil = Date.now() + 60000;
+    while(pending.has(item.roleId) && this.armed && Date.now() < waitUntil)
+      await new Promise(res => setTimeout(res, 500));
+    if(!this.armed) return;
+    if(pending.has(item.roleId)){ this.log("fail", q, "gave up waiting for the busy thread"); return; }
+    this.setStage("answering", q);
+    const outcome = await sendTo(item.roleId, q, {
+      vm: { channel:"voice", confidence: v.confidence },
+      speak: true
+    });
+    if(outcome !== "answered"){
+      this.log("fail", q, this._wd
+        ? "watchdog reset — the answer hung past its ceiling"
+        : (outcome === "blocked" ? "brief incomplete or thread busy" : "answer " + outcome + " — see the thread"));
+    }
+  },
+  async classify(item, signal){
+    const r = roleById(item.roleId);
+    const recent = (threads[item.roleId] || []).filter(m => !m.error).slice(-4)
+      .map(m => ({ role: m.role, content: String(m.content).slice(0, 400) }));
+    const data = await sheetCall({
+      action:"classify",
+      roleId: item.roleId,
+      roleTitle: r ? r.title : "",
+      company: state.company,
+      task: r ? r.task : "",
+      context: r ? r.context : "",
+      utterance: item.text,
+      recent,
+      instruction: "Decide whether this overheard utterance is a question this role should answer. " +
+        "Err toward answering — a missed question is worse than an occasional extra answer. " +
+        "Resolve follow-up references against the recent exchange; normalized_question must be a clean, self-contained question."
+    }, { timeoutMs: AMBIENT.CLASSIFY_TIMEOUT_MS, signal });
+    const v = (data && (data.result || data)) || {};
+    return {
+      needs_answer: v.needs_answer === true || v.needs_answer === "true",
+      normalized_question: String(v.normalized_question || "").trim(),
+      confidence: Math.max(0, Math.min(1, Number(v.confidence) || 0)),
+      topic: String(v.topic || ""),
+      reason: String(v.reason || "")
+    };
+  },
+  /* the backstop: a stage pending far past its own timeout means a hung
+     promise — abort it and move on rather than wedging the pipeline */
+  tick(){
+    if(!this.busy || !this.stageAt) return;
+    const age = Date.now() - this.stageAt;
+    if(this.stage === "classifying" && age > this.CLASSIFY_CEILING_MS && this.stageCtl){
+      this.stageCtl.watchdog = true;
+      try{ this.stageCtl.abort(); }catch(e){}
+    }else if(this.stage === "answering" && age > this.ANSWER_CEILING_MS && this.current){
+      this._wd = true;
+      cancelAnswer(this.current.roleId, true);
+    }
+  },
+  setStage(stage, text){
+    this.stage = stage;
+    this.stageAt = Date.now();
+    this.stageText = text || "";
+    renderAmbient();
+  },
+  log(kind, text, why){
+    this.decisions.unshift({ kind, text, why, at: Date.now() });
+    if(this.decisions.length > AMBIENT.LOG_KEEP) this.decisions.length = AMBIENT.LOG_KEEP;
+    renderAmbient();
+  }
+};
+function refreshAmbient(){
+  const btn = $("#ambientBtn");
+  btn.hidden = !Ambient.supported();
+  btn.classList.toggle("on", Ambient.armed);
+  btn.classList.toggle("pulse", Ambient.armed);
+  btn.setAttribute("aria-pressed", String(Ambient.armed));
+  btn.title = Ambient.armed ? "Stop ambient listening" : "Ambient listening — answers questions it overhears";
+  btn.setAttribute("aria-label", btn.title);
+  $("#ambientBand").hidden = !Ambient.armed;
+  if(!Ambient.armed){
+    $("#ambLog").hidden = true;
+    $("#ambientLogBtn").setAttribute("aria-expanded", "false");
+  }
+  renderAmbient();
+}
+function renderAmbient(){
+  if(!Ambient.armed) return;
+  let label = "Listening", detail = "for questions to answer…", busyDot = false;
+  const heard = (Ambient.buffer + (Ambient.interim ? " " + Ambient.interim : "")).trim();
+  if(Ambient.stage === "classifying"){ label = "Analyzing"; detail = "“" + Ambient.stageText + "”"; busyDot = true; }
+  else if(Ambient.stage === "answering"){ label = "Answering"; detail = "“" + Ambient.stageText + "”"; busyDot = true; }
+  else if(Ambient.paused){ label = "Paused"; detail = "while you dictate"; }
+  else if(heard){ label = "Heard"; detail = "“" + heard.slice(-90) + "”"; }
+  $("#ambientState").textContent = label;
+  $("#ambientDetail").textContent = detail;
+  $("#ambientBand .ambientDot").classList.toggle("busy", busyDot);
+  const qEl = $("#ambientQueue");
+  qEl.hidden = !Ambient.queue.length;
+  qEl.textContent = Ambient.queue.length + " queued";
+  renderAmbientLog();
+}
+function renderAmbientLog(){
+  const box = $("#ambLog");
+  if(box.hidden) return;
+  const ICONS = { ok:"✓", no:"✗", fail:"!", drop:"↓", dup:"≈" };
+  box.innerHTML = Ambient.decisions.length
+    ? Ambient.decisions.map(d => `<div class="ambRow ${d.kind === "ok" ? "ok" : d.kind === "fail" ? "bad" : "no"}">
+        <span class="ico" aria-hidden="true">${ICONS[d.kind] || "·"}</span>
+        <span class="t">${esc(clip(d.text, 90))}<small>${esc(d.why)} · ${fmtTime(d.at)}</small></span>
+      </div>`).join("")
+    : `<div class="ambRow no"><span class="ico">·</span><span class="t">No decisions yet — arm it and ask something out loud.</span></div>`;
+}
+$("#ambientBtn").addEventListener("click", () => Ambient.armed ? Ambient.disarm() : Ambient.arm());
+$("#ambientLogBtn").addEventListener("click", () => {
+  const box = $("#ambLog");
+  box.hidden = !box.hidden;
+  $("#ambientLogBtn").setAttribute("aria-expanded", String(!box.hidden));
+  renderAmbientLog();
+});
 
 $("#cog").addEventListener("click", () => openSettings());
 $("#done").addEventListener("click", closeSettings);
@@ -3087,6 +3476,7 @@ async function boot(){
   if(!sheetConnected) rebuildDepts(state.roles);
   normalizeRoles();
   refreshPipBtn();
+  refreshAmbient();
   applyChrome();
   renderChart();
   selectRole(rootRole().id);
