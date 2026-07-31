@@ -35,7 +35,11 @@ body{
   -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
 }
 .stage{flex:1;display:flex;min-height:0}
-.canvas{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;position:relative}
+.canvas{
+  flex:none;width:clamp(320px,26vw,440px);min-width:0;
+  display:flex;flex-direction:column;min-height:0;position:relative;
+  border-right:.5px solid var(--sep);
+}
 body::before{
   content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
   background:
@@ -73,13 +77,15 @@ input,textarea{font-family:inherit}
 .iconBtn svg{width:19px;height:19px}
 #cog svg{transition:transform .7s var(--spring)}
 #cog:hover svg{transform:rotate(60deg)}
-.paneSwitch{display:none;flex:none}
+.seg.paneSwitch{display:none;flex:none}
 .paneSwitch button{min-width:64px}
 
 /* ---------- chart ---------- */
-.head{padding:26px 20px 2px;text-align:center;flex:none}
-.head h1{margin:0;font-size:26px;line-height:1.12;font-weight:700;letter-spacing:-.026em}
-.head p{margin:7px auto 0;max-width:46ch;font-size:14px;color:var(--label2);line-height:1.45}
+/* Desktop: the chart lives in a narrow rail, so the heading collapses to a
+   small label and the intro line hides. Mobile restores the big heading. */
+.head{padding:16px 16px 0;text-align:left;flex:none}
+.head h1{margin:0;font-size:11px;line-height:1.3;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--label3)}
+.head p{display:none;margin:7px auto 0;max-width:46ch;font-size:14px;color:var(--label2);line-height:1.45}
 .chartScroll{
   flex:1; overflow:auto; padding:22px 24px 70px;
   -webkit-overflow-scrolling:touch; scrollbar-width:thin;
@@ -152,6 +158,7 @@ body.no-lines .tree ul ul::before{border-color:transparent}
 body.no-motion .char,body.no-motion .eyes,body.no-motion .hand{animation:none}
 @media (prefers-reduced-motion:reduce){
   .char,.eyes,.hand{animation:none!important}
+  .mic.listening::after{animation:none!important;opacity:.6;transform:scale(1.1)}
   *{transition-duration:.01ms!important}
 }
 
@@ -162,10 +169,15 @@ body.no-motion .char,body.no-motion .eyes,body.no-motion .hand{animation:none}
 }
 .scrim.on{opacity:1;pointer-events:auto}
 .card{
-  width:min(432px,44vw);flex:none;position:relative;z-index:2;
-  background:var(--card);border-right:.5px solid var(--sep);
-  box-shadow:1px 0 34px rgba(0,0,0,.05);
+  flex:1 1 auto;min-width:0;position:relative;z-index:2;
+  background:var(--card);
   display:flex;flex-direction:column;min-height:0;overflow:hidden;
+}
+/* The pane fills the window; the conversation sits in a centered column so a
+   wide screen doesn't stretch the thread. Uncapped on mobile. */
+.paneCol{
+  flex:1;min-height:0;display:flex;flex-direction:column;
+  width:100%;max-width:760px;margin-inline:auto;
 }
 .cardTop{
   padding:20px 20px 16px;display:flex;gap:14px;align-items:center;flex:none;
@@ -373,7 +385,7 @@ body.no-motion .spinner{animation-duration:1.6s}
 .msg{display:flex;animation:pop .42s var(--spring) both}
 .msg.me{justify-content:flex-end}
 .bubble{
-  max-width:82%;padding:9px 14px;border-radius:20px;font-size:15px;line-height:1.44;
+  max-width:min(68%,560px);padding:9px 14px;border-radius:20px;font-size:15px;line-height:1.44;
   letter-spacing:-.008em;white-space:pre-wrap;overflow-wrap:anywhere;
 }
 .msg.from .bubble{background:var(--field);border-bottom-left-radius:7px}
@@ -396,15 +408,49 @@ body.no-motion .spinner{animation-duration:1.6s}
 }
 .starter:active{transform:scale(.97)}
 .composer{
-  display:none;gap:10px;align-items:flex-end;flex:none;
+  display:none;gap:10px;align-items:flex-end;flex:none;position:relative;
   padding:10px 14px calc(12px + env(safe-area-inset-bottom,0px));border-top:.5px solid var(--sep);
 }
 .card.chatting .composer{display:flex}
+.composerBox{flex:1;min-width:0;position:relative}
 .composer textarea{
-  flex:1;border:0;background:var(--field);border-radius:20px;padding:10px 14px;
+  width:100%;display:block;border:0;background:var(--field);border-radius:20px;padding:10px 14px;
   font-size:15px;line-height:1.4;color:var(--label);resize:none;height:41px;max-height:124px;
 }
 .composer textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent)}
+/* mirror of the textarea: committed text transparent, interim words lighter */
+.ghost{
+  position:absolute;inset:0;border-radius:20px;padding:10px 14px;
+  font-size:15px;line-height:1.4;white-space:pre-wrap;overflow-wrap:break-word;
+  overflow:hidden;pointer-events:none;color:transparent;
+}
+.ghost[hidden]{display:none}
+.ghost .int{color:var(--label3);background:var(--field);border-radius:3px}
+.mic{
+  width:34px;height:34px;border-radius:50%;background:var(--field);color:var(--label2);
+  display:grid;place-items:center;flex:none;margin-bottom:4px;position:relative;
+  transition:transform .3s var(--spring),background .25s ease,color .25s ease;
+}
+.mic[hidden]{display:none}
+.mic svg{width:17px;height:17px}
+.mic:disabled{opacity:.32;cursor:default}
+.mic:not(:disabled):active{transform:scale(.86)}
+.mic.listening{background:var(--accent);color:#fff}
+.mic.listening::after{
+  content:"";position:absolute;inset:-3px;border-radius:50%;
+  border:2px solid var(--accent);opacity:0;
+  animation:micPulse 1.6s ease-out infinite;
+}
+@keyframes micPulse{0%{transform:scale(.85);opacity:.7}70%{transform:scale(1.4);opacity:0}100%{transform:scale(1.4);opacity:0}}
+.mic.flash{background:var(--danger);color:#fff}
+.micNotice{
+  position:absolute;left:14px;right:14px;bottom:calc(100% + 4px);z-index:5;
+  margin-inline:auto;width:max-content;max-width:calc(100% - 28px);
+  padding:7px 13px;border-radius:12px;background:var(--card);box-shadow:var(--shadow-lift);
+  font-size:12.5px;line-height:1.4;color:var(--danger);text-align:center;
+}
+.micNotice[hidden]{display:none}
+.vh{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
 .send{
   width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;
   display:grid;place-items:center;flex:none;margin-bottom:4px;
@@ -433,22 +479,24 @@ body.no-motion .spinner{animation-duration:1.6s}
 
 /* ---------- responsive ---------- */
 @media (max-width:900px){
-  .paneSwitch{display:flex}
+  .seg.paneSwitch{display:flex}
   .card{width:100%;border-right:0;box-shadow:none}
   body.showing-chart .card{display:none}
   body:not(.showing-chart) .canvas{display:none}
   .navTitle{display:none}
-  .head{padding-top:16px}
-  .head h1{font-size:22px}
-  .head p{font-size:13px}
   .sheet.picker{height:82dvh}
   .sheet{
     left:0;right:0;top:auto;bottom:0;width:auto;height:94dvh;border-radius:22px 22px 0 0;
     transform:translateY(102%) scale(1);
   }
   .sheet.on{transform:translateY(0)}
-  .head h1{font-size:27px}
-  .head{padding-top:26px}
+  /* Mobile keeps the pre-rail layout: full-width panes, big heading, 82% bubbles. */
+  .canvas{flex:1;width:auto;border-right:0}
+  .paneCol{max-width:none}
+  .bubble{max-width:82%}
+  .head{text-align:center;padding:26px 20px 2px}
+  .head h1{font-size:27px;font-weight:700;letter-spacing:-.026em;text-transform:none;color:var(--label);line-height:1.12}
+  .head p{display:block;font-size:13px}
 }
 
 </style>
@@ -482,7 +530,20 @@ body.no-motion .spinner{animation-duration:1.6s}
 
 <div class="stage">
 
+  <div class="canvas">
+    <header class="head">
+      <h1 id="pageTitle">Who does what</h1>
+      <p id="pageSub">Pick anyone to start a conversation.</p>
+    </header>
+    <main class="chartScroll"><div class="tree" id="tree"></div></main>
+    <div class="zoomBar">
+      <button data-zoom="-1" aria-label="Zoom out">&minus;</button>
+      <button data-zoom="1" aria-label="Zoom in">+</button>
+    </div>
+  </div>
+
 <aside class="card" id="card" aria-labelledby="cardTitle">
+  <div class="paneCol">
   <button class="cardTop" id="cardTop" aria-haspopup="dialog" aria-label="Switch role">
     <div id="cardAvatar"></div>
     <div class="meta">
@@ -502,24 +563,21 @@ body.no-motion .spinner{animation-duration:1.6s}
   <div class="chat" id="chat"><div class="thread" id="thread"></div></div>
   <div class="cardFoot" id="footBrief"><button class="wideBtn ghost" id="cardEdit">Edit this role</button></div>
   <div class="composer">
-    <textarea id="composerInput" rows="1" placeholder="Message" aria-label="Message"></textarea>
+    <div class="micNotice" id="micNotice" hidden aria-hidden="true"></div>
+    <div class="composerBox">
+      <textarea id="composerInput" rows="1" placeholder="Message" aria-label="Message"></textarea>
+      <div class="ghost" id="composerGhost" hidden aria-hidden="true"></div>
+    </div>
+    <button class="mic" id="mic" hidden aria-label="Start dictation" aria-pressed="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+    </button>
     <button class="send" id="send" disabled aria-label="Send message">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
     </button>
+    <span class="vh" id="micStatus" role="status" aria-live="polite"></span>
+  </div>
   </div>
 </aside>
-
-  <div class="canvas">
-    <header class="head">
-      <h1 id="pageTitle">Who does what</h1>
-      <p id="pageSub">Pick anyone to start a conversation.</p>
-    </header>
-    <main class="chartScroll"><div class="tree" id="tree"></div></main>
-    <div class="zoomBar">
-      <button data-zoom="-1" aria-label="Zoom out">&minus;</button>
-      <button data-zoom="1" aria-label="Zoom in">+</button>
-    </div>
-  </div>
 </div>
 
 <div class="scrim" id="scrim"></div>
@@ -564,6 +622,23 @@ body.no-motion .spinner{animation-duration:1.6s}
    key "pa_token") and is appended to the URL at runtime. */
 const SHEET_ENDPOINT = "https://script.google.com/macros/s/AKfycbzowjBwMMSEWcDHW7Z94Ga-57iacv8tOoirSQp4hGJBshvUnWrnn7thKwvzCvmk9_mM/exec";
 const TOKEN_KEY = "pa_token";
+
+/* Correction pass for dictated text: case-insensitive whole-word replacements
+   applied to every final transcript before it reaches the composer. General
+   speech engines reliably mangle company and product names — this map is what
+   makes dictation feel accurate here, so keep it current. It can later be
+   loaded from the Sheet instead of living in this file. */
+const VOICE_CORRECTIONS = {
+  "north wind": "Northwind",
+  "arr": "ARR",
+  "q b r": "QBR",
+  "m s a": "MSA",
+  "d p a": "DPA"
+};
+const CORRECTION_RULES = Object.keys(VOICE_CORRECTIONS)
+  .sort((a, b) => b.length - a.length)
+  .map(k => [new RegExp("\\b" + k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "gi"), VOICE_CORRECTIONS[k]]);
+const correctTranscript = t => CORRECTION_RULES.reduce((s, [re, out]) => s.replace(re, out), t);
 
 const DEFAULT_DEPTS = {
   exec:      { name:"Executive",        tint:"#5A5A60" },
@@ -709,6 +784,7 @@ function normalizeRoles(){
     r.knowledge = Array.isArray(r.knowledge) ? r.knowledge.map(String) : (r.knowledge ? [String(r.knowledge)] : []);
     r.guardrails = r.guardrails || "";
     r.outOfScope = r.outOfScope || "";
+    r.language = String(r.language || "").trim();   // dictation language, e.g. "de-DE"
     r.version = Number(r.version) || 1;
     r.look = Object.assign({skin:"#F2D3B8",hair:"#2E2A28",style:0,prop:"none"}, r.look || {});
     r.look.style = Number(r.look.style) || 0;
@@ -971,7 +1047,9 @@ const Agent = {
     const built = buildPrompt(role);
     if(built.missing.length) throw new Error("brief incomplete: " + built.missing.join(", "));
     if(!getToken()) return this.placeholder(role);
-    const data = await sheetCall({
+    /* channel "voice" makes the Apps Script log ContentType = voice_transcript */
+    const lastUser = [...history].reverse().find(m => m.role === "user" && !m.error);
+    const payload = {
       action:"chat",
       roleId: role.id,
       roleTitle: role.title,
@@ -981,8 +1059,11 @@ const Agent = {
       promptVersion: PROMPT_VERSION,
       personaVersion: role.version || 1,
       temperature: FIDELITY.temperature,
+      channel: (lastUser && lastUser.channel) || "chat",
       messages: history.filter(m => !m.error).map(m => ({ role:m.role, content:m.content }))
-    }, 65000);
+    };
+    if(lastUser && typeof lastUser.confidence === "number") payload.transcriptConfidence = lastUser.confidence;
+    const data = await sheetCall(payload, 65000);
     const text = data.reply || data.text || data.content;
     if(!text) throw new Error("empty reply");
     return typeof text === "string" ? text : JSON.stringify(text);
@@ -996,6 +1077,101 @@ const Agent = {
       role.outcome ? `What you'd get back: ${low(role.outcome)}.` : ""
     ].filter(Boolean);
     return "Placeholder reply — add your access token in Settings › Chat to get real answers.\n\n" + parts.join(" ");
+  }
+};
+
+/* =================================================================
+   DICTATION — speech-to-text behind one interface.
+
+   The mic button and composer only ever talk to `Dictation`
+   (supported / start / stop / the on* callbacks). Which engine does
+   the listening comes from Settings.speech_to_text_provider in the
+   Sheet config; "browser_native" — the Web Speech API — is the
+   default. To add a hosted transcription service later, register a
+   second entry in SPEECH_ENGINES with the same callback contract and
+   name it in the Sheet; nothing in the button or composer changes.
+================================================================= */
+const SPEECH_ENGINES = {
+  browser_native: {
+    supported(){ return !!(window.SpeechRecognition || window.webkitSpeechRecognition); },
+    start(lang, cb){
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const rec = new SR();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.maxAlternatives = 1;
+      rec.lang = lang;
+      rec.onresult = e => {
+        let interim = "";
+        for(let i = e.resultIndex; i < e.results.length; i++){
+          const res = e.results[i];
+          if(res.isFinal) cb.final(res[0].transcript, typeof res[0].confidence === "number" ? res[0].confidence : null);
+          else interim += res[0].transcript;
+        }
+        cb.interim(interim);
+      };
+      rec.onerror = e => cb.error(e.error || "unknown");
+      rec.onend = () => cb.end();
+      rec.start();
+      return { stop(){ try{ rec.stop(); }catch(e){} } };
+    }
+  }
+};
+
+const DICTATION_ERRORS = {
+  "not-allowed": "Microphone access is off. Turn it on in your browser's site settings.",
+  "service-not-allowed": "Microphone access is off. Turn it on in your browser's site settings.",
+  "no-speech": "Didn't catch that — try again.",
+  "network": "Dictation needs a connection right now.",
+  "audio-capture": "No microphone was found."
+};
+
+const Dictation = {
+  active: false,
+  _session: null, _silence: null, _erred: false,
+  onInterim: null, onFinal: null, onState: null, onError: null,
+  engine(){
+    const key = (state.settings && state.settings.speech_to_text_provider) || "browser_native";
+    return SPEECH_ENGINES[key] || SPEECH_ENGINES.browser_native;
+  },
+  supported(){ return this.engine().supported(); },
+  lang(){
+    const r = roleById(selectedId);
+    return (r && String(r.language || "").trim()) || "en-US";
+  },
+  start(){
+    if(this.active || !this.supported()) return;
+    this.active = true; this._erred = false;
+    this.onState && this.onState("listening");
+    try{
+      this._session = this.engine().start(this.lang(), {
+        interim: t => { this._poke(); this.onInterim && this.onInterim(t); },
+        final: (t, conf) => { this._poke(); this.onFinal && this.onFinal(correctTranscript(t), conf); },
+        error: code => {
+          if(code === "aborted") return;               // deliberate stop — stay silent
+          this._erred = true;
+          this.onError && this.onError(DICTATION_ERRORS[code] || "Dictation stopped unexpectedly — try again.");
+        },
+        end: () => this._finish()
+      });
+    }catch(e){
+      this._erred = true;
+      this.onError && this.onError("Dictation couldn't start — try again.");
+      this._finish();
+    }
+  },
+  stop(){ if(this.active && this._session) this._session.stop(); },
+  /* auto-stop after 3 seconds of silence, counted from the last result */
+  _poke(){
+    clearTimeout(this._silence);
+    this._silence = setTimeout(() => this.stop(), 3000);
+  },
+  _finish(){
+    clearTimeout(this._silence);
+    this._session = null;
+    if(!this.active) return;
+    this.active = false;
+    this.onState && this.onState("idle");
   }
 };
 
@@ -1028,7 +1204,8 @@ function renderThread(){
   const blocked = built.missing.length > 0;
   $("#composerInput").disabled = blocked;
   $("#composerInput").placeholder = blocked ? "Complete the brief to message this role" : "Message " + r.title;
-  if(blocked) $("#send").disabled = true;
+  $("#mic").disabled = blocked;
+  if(blocked){ $("#send").disabled = true; Dictation.stop(); }
   const t = threads[r.id] || [];
   if(!t.length && waitingFor !== r.id){
     box.innerHTML = threadNotices(r) + `<div class="empty">
@@ -1052,6 +1229,7 @@ function renderThread(){
 }
 function setTab(next){
   tab = next;
+  if(tab !== "chat") Dictation.stop();
   $("#card").classList.toggle("chatting", tab === "chat");
   $("#tabSeg").classList.toggle("b", tab === "chat");
   $("#tabSeg").querySelectorAll("[data-tab]").forEach(b =>
@@ -1067,9 +1245,15 @@ async function sendMessage(text){
   const built = buildPrompt(r);
   if(built.missing.length){ renderThread(); return; }
   if(!pinned[r.id]) pinned[r.id] = built.hash;
-  threads[r.id] = threads[r.id] || [];
-  threads[r.id].push({ role:"user", content:text.trim(), at:Date.now() });
   const input = $("#composerInput");
+  /* per-message channel flag: "voice" only when this composer draft was
+     dictated; starters and typed messages stay "chat". Dictation always
+     stops on send, and never auto-sends. */
+  if(Dictation.active && dictInterimLen) voiceMeta.dictated = true;
+  const vm = text === input.value ? consumeVoiceMeta() : { channel:"chat" };
+  discardDictation();
+  threads[r.id] = threads[r.id] || [];
+  threads[r.id].push({ role:"user", content:text.trim(), at:Date.now(), channel:vm.channel, confidence:vm.confidence });
   input.value = ""; input.style.height = "41px"; $("#send").disabled = true;
   waitingFor = r.id; renderThread(); renderChart();
   try{
@@ -1128,6 +1312,8 @@ function selectRole(id){
   const r = roleById(id) || rootRole();
   selectedId = r.id;
   renderChart(); renderCard();
+  discardDictation();
+  refreshMic();
   const input = $("#composerInput");
   input.value = ""; input.style.height = "41px";
   input.placeholder = "Message " + r.title;
@@ -1438,11 +1624,124 @@ $("#composerInput").addEventListener("input", e => {
   el.style.height = "41px";
   el.style.height = Math.min(el.scrollHeight, 124) + "px";
   $("#send").disabled = !el.value.trim();
+  /* manual typing while dictating: keep every keystroke, move the insertion
+     point to the caret, and let the next result land there */
+  if(Dictation.active){
+    dictAnchor = el.selectionStart ?? el.value.length;
+    dictInterimLen = 0;
+    renderGhost();
+  }
+  if(!el.value.trim()) resetVoiceMeta();
 });
 $("#composerInput").addEventListener("keydown", e => {
   if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); sendMessage(e.target.value); }
 });
+$("#composerInput").addEventListener("scroll", () => { $("#composerGhost").scrollTop = $("#composerInput").scrollTop; });
 $("#send").addEventListener("click", () => sendMessage($("#composerInput").value));
+
+/* ---------- dictation wiring ---------- */
+const micBtn = $("#mic"), micNoticeEl = $("#micNotice"), micStatusEl = $("#micStatus"), ghostEl = $("#composerGhost");
+const voiceMeta = { dictated:false, confidences:[] };
+let dictAnchor = 0, dictInterimLen = 0, dictDiscard = false;
+let micNoticeTimer = null, micFlashTimer = null;
+
+function refreshMic(){ micBtn.hidden = !Dictation.supported(); }
+function resetVoiceMeta(){ voiceMeta.dictated = false; voiceMeta.confidences.length = 0; }
+function consumeVoiceMeta(){
+  const meta = { channel: voiceMeta.dictated ? "voice" : "chat" };
+  if(voiceMeta.dictated && voiceMeta.confidences.length){
+    meta.confidence = Math.round(voiceMeta.confidences.reduce((a, b) => a + b, 0) / voiceMeta.confidences.length * 1000) / 1000;
+  }
+  resetVoiceMeta();
+  return meta;
+}
+/* stop listening AND drop anything still in flight — used when the draft the
+   session was dictating into no longer exists (send, role switch) */
+function discardDictation(){
+  if(Dictation.active){ dictDiscard = true; Dictation.stop(); }
+  resetVoiceMeta();
+  dictAnchor = 0; dictInterimLen = 0;
+  ghostEl.hidden = true; ghostEl.textContent = "";
+}
+function micNotice(msg){
+  clearTimeout(micNoticeTimer);
+  micNoticeEl.textContent = msg;
+  micNoticeEl.hidden = false;
+  micNoticeTimer = setTimeout(() => { micNoticeEl.hidden = true; }, 4500);
+}
+function syncComposer(){
+  const el = $("#composerInput");
+  el.style.height = "41px";
+  el.style.height = Math.min(el.scrollHeight, 124) + "px";
+  $("#send").disabled = !el.value.trim();
+}
+/* The ghost mirrors the textarea so the interim range can render lighter:
+   committed text is transparent (the textarea shows it), the interim span
+   paints over its own glyphs in a lighter color. */
+function renderGhost(){
+  const el = $("#composerInput");
+  if(!dictInterimLen){ ghostEl.hidden = true; ghostEl.textContent = ""; return; }
+  const v = el.value;
+  ghostEl.innerHTML = `<span>${esc(v.slice(0, dictAnchor))}</span><span class="int">${esc(v.slice(dictAnchor, dictAnchor + dictInterimLen))}</span><span>${esc(v.slice(dictAnchor + dictInterimLen))}</span>`;
+  ghostEl.hidden = false;
+  ghostEl.scrollTop = el.scrollTop;
+}
+function spacedForInsert(text){
+  const before = $("#composerInput").value.slice(0, dictAnchor);
+  const t = text.replace(/^\s+/, "");
+  return before && !/\s$/.test(before) && t ? " " + t : t;
+}
+/* Replace the current interim range with `insert`; committing advances the
+   anchor so dictation appends at the cursor and never wipes typed text. */
+function setDictText(insert, commit){
+  const el = $("#composerInput"), v = el.value;
+  el.value = v.slice(0, dictAnchor) + insert + v.slice(dictAnchor + dictInterimLen);
+  if(commit){ dictAnchor += insert.length; dictInterimLen = 0; }
+  else dictInterimLen = insert.length;
+  const caret = dictAnchor + dictInterimLen;
+  try{ el.setSelectionRange(caret, caret); }catch(e){}
+  syncComposer();
+  renderGhost();
+}
+
+Dictation.onInterim = t => { if(!dictDiscard) setDictText(t.trim() ? spacedForInsert(t) : "", false); };
+Dictation.onFinal = (t, conf) => {
+  if(dictDiscard || !t.trim()) return;
+  setDictText(spacedForInsert(t), true);
+  voiceMeta.dictated = true;
+  if(typeof conf === "number" && conf > 0) voiceMeta.confidences.push(conf);
+};
+Dictation.onState = s => {
+  const listening = s === "listening";
+  micBtn.classList.toggle("listening", listening);
+  micBtn.setAttribute("aria-pressed", String(listening));
+  micBtn.setAttribute("aria-label", listening ? "Stop dictation" : "Start dictation");
+  if(listening){
+    micBtn.classList.remove("flash");
+    const el = $("#composerInput");
+    dictAnchor = el.selectionStart ?? el.value.length;
+    dictInterimLen = 0;
+    micStatusEl.textContent = "Listening. Tap the microphone again to stop.";
+  }else{
+    /* interim words still on screen stay put as normal text — never wipe */
+    if(dictInterimLen){ dictAnchor += dictInterimLen; dictInterimLen = 0; voiceMeta.dictated = true; }
+    renderGhost();
+    dictDiscard = false;
+    if(!Dictation._erred) micStatusEl.textContent = "Dictation stopped.";
+  }
+};
+Dictation.onError = msg => {
+  micNotice(msg);
+  micStatusEl.textContent = msg;
+  clearTimeout(micFlashTimer);
+  micBtn.classList.remove("listening");
+  micBtn.classList.add("flash");
+  micFlashTimer = setTimeout(() => micBtn.classList.remove("flash"), 700);
+};
+micBtn.addEventListener("click", () => {
+  if(Dictation.active) Dictation.stop();
+  else{ micNoticeEl.hidden = true; Dictation.start(); }
+});
 $("#cog").addEventListener("click", () => openSettings());
 $("#done").addEventListener("click", closeSettings);
 $("#back").addEventListener("click", () => { renderMain(); goDeep(false); });
