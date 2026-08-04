@@ -1273,7 +1273,21 @@ async function sheetCall(payload, opts = {}){
       body: JSON.stringify(payload)
     });
     if(!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
+    /* Parse by hand so a non-JSON reply produces a diagnosis, not a syntax
+       error. When an Apps Script handler crashes — or a redeploy leaves the
+       web app's access as something other than "Anyone" — Google serves an
+       HTML error or sign-in page, and "Unexpected token '<'" tells the person
+       reading the banner nothing. */
+    const rawBody = await res.text();   // outside the try: an abort here must stay an AbortError
+    let data;
+    try{ data = JSON.parse(rawBody); }
+    catch(parseErr){
+      const err = new Error("the web app replied with a page instead of data — " +
+        "usually a crashed Apps Script handler (open Apps Script › Executions to see the error) " +
+        "or a deployment whose access isn't set to Anyone");
+      err.code = "BAD_RESPONSE";
+      throw err;
+    }
     if(data && data.ok === false){
       const err = new Error(data.error || data.message || "request failed");
       err.code = data.code || "";
@@ -1341,8 +1355,10 @@ function applyConfig(cfg){
   rebuildDepts(state.roles);
   normalizeRoles();
   /* the Sheet's VocabularyFixes ride the config; merged over the built-ins
-     so the Sheet owns the vocabulary once connected */
-  compileVocab(Object.assign({}, VOICE_CORRECTIONS, parseVocabConfig(cfg)));
+     so the Sheet owns the vocabulary once connected. Guarded: vocabulary is
+     an enhancement — no shape it arrives in may ever block connecting. */
+  try{ compileVocab(Object.assign({}, VOICE_CORRECTIONS, parseVocabConfig(cfg))); }
+  catch(e){ compileVocab(VOICE_CORRECTIONS); }
 }
 
 /* ========== the mark ==========
@@ -4367,7 +4383,12 @@ async function boot(){
       applyConfig(cfg);
       setConnected(true);
     }catch(err){
-      banner = SAMPLE_BANNER + " (The Sheet said: " + esc(err.message) + ")";
+      /* a token IS set, so "add your access token" would misdirect — lead
+         with what actually failed, in the server's own words */
+      banner = "<b>Couldn't load from your Sheet</b> — running on built-in sample data. " +
+        "The Sheet said: " + esc(String(err.message).replace(/\.\s*$/, "")) + "." +
+        (err.code === "TIMEOUT" ? " The deployment may be cold or unreachable — reload to retry." :
+         /token/i.test(err.message) ? " Re-paste the access token in Settings › Chat (it must match the one in the Apps Script's Script Properties)." : "");
     }
   }else{
     banner = SAMPLE_BANNER;
