@@ -92,6 +92,14 @@
  *    device's fingerprint does not match — a stale brief never gets answered.
  *    Logs every session to Interactions and every turn to Messages.
  *
+ *  ONE CONVERSATION, SEVERAL PERSONAS
+ *  The app lets a conversation be handed from one persona to another without
+ *  starting a new thread. Nothing here changes for that: each chat call still
+ *  names one roleId and is answered from that persona's brief alone. What the
+ *  other personas said reaches the model quoted and attributed inside a user
+ *  turn, so UserText in the Messages tab records exactly what this persona was
+ *  shown — including a colleague's answer, when it was given one.
+ *
  * ============================================================================
  */
 
