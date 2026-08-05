@@ -2916,38 +2916,120 @@ function refreshAfterEdit({chart=true, card=true, main=false, pane=false} = {}){
 /* ---------- sheet sync ---------- */
 function connStatusText(){
   if(sheetConnected) return "Connected — personas and settings come from your Sheet.";
-  return getToken()
-    ? "Not connected. Reload the page to load from the Sheet."
-    : "Empty — running on built-in sample data until you paste a token.";
+  if(!getToken()) return "Empty — running on built-in sample data until you paste a token.";
+  return retryTimer ? "Not connected — retrying automatically." : "Not connected.";
 }
+const setStatus = s => { if($("#epStatus")) $("#epStatus").textContent = s; };
+
+/* One attempt at reading the whole config and adopting it. Throws on failure
+   so each caller can word its own message; on success the app is connected,
+   which is what arms background sync and every write-back. */
+async function loadFromSheet(){
+  const cfg = await sheetCall({ action:"config" });
+  if(!Array.isArray(cfg.roles) || !cfg.roles.length) throw new Error("no personas in the Sheet");
+  applyConfig(cfg);
+  setConnected(true);
+  lastWarm = Date.now();
+}
+
+/* =================================================================
+   CONNECTING IS NOT A ONE-SHOT
+
+   A first config read fails for reasons that say nothing about whether
+   the setup is right: an Apps Script cold start running past the
+   timeout, a phone waking on a different network, a redeploy landing
+   mid-read. That failure used to be final. Background sync and every
+   persona write-back are gated on sheetConnected, and only the boot
+   call ever set it — so one unlucky read left the page on sample data
+   for as long as it stayed open, silently, while chat carried on
+   working because it needs the token alone.
+
+   The app now keeps trying on a widening delay for as long as a token
+   exists, and stops the moment one attempt succeeds. A hidden tab waits
+   to be looked at instead of spending attempts in the background, and
+   both returning to the tab and regaining the network trigger an
+   immediate retry — those are exactly when the earlier cause is most
+   likely to have passed.
+================================================================= */
+const RETRY_WAITS = [5000, 10000, 20000, 40000, 60000];
+/* Failures no amount of waiting resolves — a wrong or missing token, and a
+   Sheet that answered but holds no personas. Everything else is treated as
+   weather and retried. */
+const NEEDS_A_HUMAN = /token|no personas in the Sheet/i;
+let retryTimer = null, retryAt = 0, connecting = false;
+function stopRetrying(){ clearTimeout(retryTimer); retryTimer = null; retryAt = 0; }
+function scheduleRetry(bump = true){
+  clearTimeout(retryTimer);
+  if(!getToken()){ retryTimer = null; return; }
+  const wait = RETRY_WAITS[Math.min(retryAt, RETRY_WAITS.length - 1)];
+  if(bump) retryAt++;
+  retryTimer = setTimeout(connectNow, wait);
+}
+/* Connects and re-renders whatever that changed. Safe to call at any time:
+   overlapping calls collapse into the first, and a live conversation is
+   never yanked away — the selection only moves if the Sheet no longer has
+   the persona that was on screen. */
+async function connectNow(){
+  if(connecting) return;
+  clearTimeout(retryTimer); retryTimer = null;
+  if(!getToken()){ stopRetrying(); setStatus(connStatusText()); return; }
+  if(document.hidden){ scheduleRetry(false); return; }
+  connecting = true;
+  try{
+    await loadFromSheet();
+    stopRetrying();
+    warnedUnsaved = false;
+    hideBanner();
+    applyChrome(); renderChart(); renderMain();
+    if(!roleById(selectedId)) selectRole(rootRole().id);
+    else { renderCard(); if(tab === "chat") renderThread(); }
+    syncPip();
+    setStatus(connStatusText());
+  }catch(err){
+    setConnected(false);
+    /* Retry what time can fix, and only that. A rejected token is a standing
+       answer, not a blip: retrying it every minute would spend the Apps
+       Script execution quota on a request that cannot start succeeding until
+       someone re-pastes it. Pasting into Settings › Chat calls
+       scheduleReconnect, which clears the stop. */
+    if(NEEDS_A_HUMAN.test(err.message)) stopRetrying(); else scheduleRetry();
+    setStatus("Couldn't connect: " + err.message + (retryTimer ? " — retrying." : ""));
+  }finally{ connecting = false; }
+}
+addEventListener("online", () => { if(!sheetConnected && getToken()) connectNow(); });
+document.addEventListener("visibilitychange", () => {
+  if(!document.hidden && !sheetConnected && getToken()) connectNow();
+});
+
+/* A settings paste restarts the attempt chain from the top, so a corrected
+   token or endpoint never has to wait out the previous backoff. */
 let reconnectTimer = null;
 function scheduleReconnect(){
   clearTimeout(reconnectTimer);
+  stopRetrying();
   setConnected(false);
-  reconnectTimer = setTimeout(async () => {
-    if(!getToken()){ if($("#epStatus")) $("#epStatus").textContent = connStatusText(); return; }
-    try{
-      const cfg = await sheetCall({ action:"config" });
-      if(!Array.isArray(cfg.roles) || !cfg.roles.length) throw new Error("no personas in the Sheet");
-      applyConfig(cfg);
-      setConnected(true);
-      lastWarm = Date.now();
-      hideBanner();
-      applyChrome(); renderChart(); renderMain();
-      selectRole(rootRole().id);
-      syncPip();
-      if($("#epStatus")) $("#epStatus").textContent = connStatusText();
-    }catch(err){
-      if($("#epStatus")) $("#epStatus").textContent = "Couldn't connect: " + err.message;
-    }
-  }, 900);
+  reconnectTimer = setTimeout(connectNow, 900);
 }
 
 /* Debounced write-back: one savePersona per pause in typing. */
 function touchRole(r){ r.version = (r.version || 1) + 1; schedulePersonaSave(r.id); }
-let saveTimer = null, savePendingId = null;
+let saveTimer = null, savePendingId = null, warnedUnsaved = false;
 function schedulePersonaSave(id){
-  if(!sheetConnected || !id) return;
+  if(!id) return;
+  /* While disconnected the roles on screen are the built-in samples, whose
+     ids don't exist in the Sheet — queueing the edit would only send a write
+     that must fail, and the next successful config read replaces these roles
+     wholesale anyway. So say so once, plainly. Returning in silence is what
+     made a lost edit look exactly like a saved one. */
+  if(!sheetConnected){
+    if(!warnedUnsaved){
+      warnedUnsaved = true;
+      showBanner("<b>Not connected — this edit stays in this browser.</b> Nothing changed here " +
+        "reaches the Sheet, and the Sheet's own copy replaces it once the connection comes back. " +
+        esc(connStatusText()));
+    }
+    return;
+  }
   if(savePendingId && savePendingId !== id) flushPersonaSave();
   savePendingId = id;
   clearTimeout(saveTimer);
@@ -4827,17 +4909,19 @@ async function boot(){
   if(getToken()){
     try{
       lastWarm = Date.now();          // the config call itself warms the deployment
-      const cfg = await sheetCall({ action:"config" });
-      if(!Array.isArray(cfg.roles) || !cfg.roles.length) throw new Error("no personas in the Sheet");
-      applyConfig(cfg);
-      setConnected(true);
+      await loadFromSheet();
     }catch(err){
       /* a token IS set, so "add your access token" would misdirect — lead
-         with what actually failed, in the server's own words */
-      banner = "<b>Couldn't load from your Sheet</b> — running on built-in sample data. " +
-        "The Sheet said: " + esc(String(err.message).replace(/\.\s*$/, "")) + "." +
-        (err.code === "TIMEOUT" ? " The deployment may be cold or unreachable — reload to retry." :
-         /token/i.test(err.message) ? " Re-paste the access token in Settings › Chat (it must match the one in the Apps Script's Script Properties)." : "");
+         with what actually failed, in the server's own words. This is no
+         longer the only attempt: the retry chain keeps going underneath,
+         so the banner promises a retry instead of demanding a reload, and
+         clears itself the moment one succeeds. */
+      if(!NEEDS_A_HUMAN.test(err.message)) scheduleRetry();
+      banner = "<b>Couldn't load from your Sheet</b> — running on built-in sample data" +
+        (retryTimer ? ", retrying in the background" : "") + ". The Sheet said: " +
+        esc(String(err.message).replace(/\.\s*$/, "")) + "." +
+        (err.code === "TIMEOUT" ? " The deployment was cold or unreachable." :
+         /token/i.test(err.message) ? " If it keeps failing, re-paste the access token in Settings › Chat — it must match the one in the Apps Script's Script Properties." : "");
     }
   }else{
     banner = SAMPLE_BANNER;
