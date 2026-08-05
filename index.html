@@ -873,9 +873,17 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
 /* ========== data ========== */
 /* Base URL of the Apps Script web app. Safe to commit: it answers nothing
    without the access token, which lives only in this browser (localStorage,
-   key "pa_token") and is appended to the URL at runtime. */
+   key "pa_token") and is appended to the URL at runtime.
+
+   Every Apps Script re-deploy that creates a NEW deployment mints a new /exec
+   URL, so the constant below is only the default. Settings › Chat accepts the
+   full Web app URL (with or without ?token=...) pasted straight from the
+   deploy dialog: the app splits it into an endpoint override (localStorage,
+   key "pa_endpoint") and the token, and targets that deployment from then on.
+   Paste once per browser — nothing needs re-entering after that. */
 const SHEET_ENDPOINT = "https://script.google.com/macros/s/AKfycbzowjBwMMSEWcDHW7Z94Ga-57iacv8tOoirSQp4hGJBshvUnWrnn7thKwvzCvmk9_mM/exec";
 const TOKEN_KEY = "pa_token";
+const ENDPOINT_KEY = "pa_endpoint";
 
 /* Correction pass for dictated text, applied to every final transcript before
    it reaches the composer. Speech-to-text errors are rarely literal, so
@@ -1228,6 +1236,10 @@ function normalizeRoles(){
     r.language = String(r.language || "").trim();   // dictation language, e.g. "de-DE"
     r.voice = String(r.voice || "").trim();         // TTS voice name from the VoiceProfiles tab; "" = Automatic
     r.version = Number(r.version) || 1;
+    /* server-side optimistic-concurrency counter; 0 = the server didn't send
+       one, and the client then omits it from saves so the server's conflict
+       check is skipped rather than tripped by a made-up number */
+    r.rowVersion = Number(r.rowVersion) || 0;
     r.look = Object.assign({skin:"", style:0}, r.look || {});
     r.look.style = ((Number(r.look.style) || 0) % 6 + 6) % 6;
     /* skin is repurposed: an optional mark-color override on top of the
@@ -1246,6 +1258,40 @@ const deptOf = r => DEPTS[r.dept] || {name:"Team", tint:"#8E8E93"};
 let sheetConnected = false;
 function getToken(){ try{ return (localStorage.getItem(TOKEN_KEY) || "").trim(); }catch(e){ return ""; } }
 function setToken(v){ try{ v && v.trim() ? localStorage.setItem(TOKEN_KEY, v.trim()) : localStorage.removeItem(TOKEN_KEY); }catch(e){} }
+function getEndpoint(){
+  try{
+    const v = (localStorage.getItem(ENDPOINT_KEY) || "").trim();
+    if(/^https:\/\/script\.google\.com\/.+\/exec$/.test(v)) return v;
+  }catch(e){}
+  return SHEET_ENDPOINT;
+}
+function setEndpoint(v){
+  try{
+    v && v.trim() ? localStorage.setItem(ENDPOINT_KEY, v.trim()) : localStorage.removeItem(ENDPOINT_KEY);
+  }catch(e){}
+}
+/* The one field in Settings › Chat takes either form: a bare token, or the
+   full Web app URL pasted straight from Apps Script's deploy dialog —
+   optionally with ?token=... on the end, which is how the server's own setup
+   doc writes it. A URL is split into the endpoint override and the token, so
+   pasting the deploy URL can never poison the token again. Returns what was
+   understood so the caller can word its status line. */
+function applyTokenInput(raw){
+  const v = String(raw || "").trim();
+  if(/^https:\/\/script\.google\.com\//.test(v)){
+    try{
+      const u = new URL(v);
+      const ep = u.origin + u.pathname;
+      if(!/\/exec$/.test(ep)) return { kind:"badUrl" };
+      setEndpoint(ep === SHEET_ENDPOINT ? "" : ep);
+      const t = (u.searchParams.get("token") || "").trim();
+      if(t) setToken(t);
+      return { kind: t ? "urlWithToken" : "urlOnly", endpoint: ep, token: t || getToken() };
+    }catch(e){ return { kind:"badUrl" }; }
+  }
+  setToken(v);
+  return { kind:"token", token: v };
+}
 
 /* text/plain on purpose: Apps Script doesn't answer CORS preflight, and a
    JSON content type would trigger one. The token rides the query string.
@@ -1265,7 +1311,7 @@ async function sheetCall(payload, opts = {}){
     else opts.signal.addEventListener("abort", relay, { once:true });
   }
   try{
-    const res = await fetch(SHEET_ENDPOINT + "?token=" + encodeURIComponent(getToken()), {
+    const res = await fetch(getEndpoint() + "?token=" + encodeURIComponent(getToken()), {
       method:"POST",
       headers:{ "Content-Type":"text/plain;charset=utf-8" },
       redirect:"follow",
@@ -1331,7 +1377,55 @@ function setConnected(on){
   dot.classList.toggle("on", on);
   dot.title = label;
   dot.setAttribute("aria-label", label);
+  if(on) armSync(); else disarmSync();
 }
+
+/* =================================================================
+   BACKGROUND SYNC — the Sheet is the source of truth, so the app
+   re-reads it on the cadence the Sheet itself sets
+   (Settings.sync_interval_seconds, default 30s, floor 10s). Edits
+   made in the Sheet or on another device appear here without a
+   reload; edits made here still write back instantly through
+   savePersona. A tick is skipped whenever it could clobber work in
+   flight: a pending persona save, the Settings sheet open, or the
+   tab hidden. Nothing re-renders unless the loaded state actually
+   changed, and the current selection, threads, and composer drafts
+   are never touched by a sync render.
+================================================================= */
+let syncTimer = null, syncBusy = false;
+function syncIntervalMs(){
+  const s = Number(state.settings && state.settings.sync_interval_seconds);
+  return Math.max(10, !s || isNaN(s) ? 30 : s) * 1000;
+}
+function armSync(){
+  clearInterval(syncTimer);
+  syncTimer = setInterval(backgroundSync, syncIntervalMs());
+}
+function disarmSync(){ clearInterval(syncTimer); syncTimer = null; }
+const syncSnapshot = () => JSON.stringify([state.roles, state.company, state.subtitle,
+  state.title, state.blurb, state.appearance, state.accent, state.lines, state.motion, DEPTS]);
+async function backgroundSync(){
+  if(!sheetConnected || !getToken() || document.hidden || syncBusy) return;
+  if(savePendingId || $("#sheet").classList.contains("on")) return;
+  syncBusy = true;
+  try{
+    const cfg = await sheetCall({ action:"config" }, { timeoutMs:20000 });
+    if(!Array.isArray(cfg.roles) || !cfg.roles.length) return;
+    lastWarm = Date.now();               // a config read is as warming as a ping
+    const before = syncSnapshot();
+    applyConfig(cfg);
+    armSync();                           // the interval setting itself may have changed
+    if(syncSnapshot() === before) return;
+    if(!roleById(selectedId)){ selectRole(rootRole().id); return; }
+    applyChrome(); renderChart(); renderCard();
+    if(tab === "chat") renderThread();
+    syncPip();
+  }catch(e){ /* transient — the next tick retries; chat errors surface on their own */ }
+  finally{ syncBusy = false; }
+}
+document.addEventListener("visibilitychange", () => {
+  if(!document.hidden && sheetConnected && Date.now() - lastWarm > syncIntervalMs()) backgroundSync();
+});
 function showBanner(html){ $("#appBannerText").innerHTML = html; $("#appBanner").hidden = false; }
 function hideBanner(){ $("#appBanner").hidden = true; }
 const SAMPLE_BANNER = "Running on built-in sample data — add your access token in Settings to connect the Sheet.";
@@ -1529,7 +1623,17 @@ function applyChrome(){
    Content-Type text/plain;charset=utf-8 — text/plain on purpose: it
    keeps the browser from sending a CORS preflight, which Apps Script
    web apps don't answer. The access token is appended to the URL at
-   runtime and is never written into this file.
+   runtime and is never written into this file. The URL itself is
+   getEndpoint(): the built-in constant unless this browser stores an
+   override pasted into Settings › Chat — which is how the app follows
+   an Apps Script re-deploy without a code change.
+
+   The reference implementation of the server lives in this repo at
+   apps-script/Code.gs — paste it whole into the Sheet's Apps Script
+   editor and redeploy (Manage deployments › edit › New version).
+   While connected, the app also re-reads config on the cadence the
+   Sheet sets (Settings.sync_interval_seconds), so edits made in the
+   Sheet or on another device flow back here without a reload.
 
      { action:"config" }                  -> org chart, settings, personas
      { action:"savePersona", persona }    -> write one brief back
@@ -2413,12 +2517,15 @@ function renderMain(){
 
     <div class="gLabel">Chat</div>
     <div class="group">
-      <div class="row col"><div class="lab">Access token</div>
-        <input class="ta oneline" type="password" data-token placeholder="Paste your access token" value="${esc(getToken())}" autocomplete="off" spellcheck="false" aria-label="Access token">
+      <div class="row col"><div class="lab">Access token — or the full Web app URL</div>
+        <input class="ta oneline" type="password" data-token placeholder="Token, or https://script.google.com/…/exec?token=…" value="${esc(getToken())}" autocomplete="off" spellcheck="false" aria-label="Access token or Web app URL">
       </div>
       <div class="row"><span class="k" style="font-size:14px;color:var(--label2)">Status<small id="epStatus">${connStatusText()}</small></span></div>
+      ${getEndpoint() !== SHEET_ENDPOINT ? `<button class="row" data-endpoint-reset>
+        <span class="k" style="color:var(--accent)">Use the built-in endpoint again<small style="overflow-wrap:anywhere">Currently: ${esc(getEndpoint())}</small></span>
+      </button>` : ""}
     </div>
-    <p class="footNote">The token stays in this browser (<code>localStorage</code>) and unlocks your Sheet's web app — personas and settings load from there once it's set. Keep the Anthropic key in Script Properties, never in this page.</p>
+    <p class="footNote">Paste either the bare token, or the whole <code>/exec</code> URL from Apps Script's deploy dialog (with <code>?token=…</code> on the end if you like) — the app splits it and remembers both in this browser, so one paste per device is all it ever takes. After a re-deploy that mints a new URL, paste the new one here. Keep the Anthropic key in Script Properties, never in this page.</p>
 
     <div class="gLabel">Voice</div>
     <div class="group">
@@ -2611,7 +2718,11 @@ async function flushPersonaSave(){
   if(!r || !sheetConnected || !getToken()) return;
   const d = deptOf(r);
   try{
-    const res = await sheetCall({ action:"savePersona", persona:{
+    const res = await sheetCall({ action:"savePersona",
+      /* echoes the server's RowVersion so its conflict check has teeth;
+         omitted entirely when the server never sent one (rowVersion 0) */
+      rowVersion: r.rowVersion > 0 ? r.rowVersion : undefined,
+      persona:{
       id:r.id, parent:r.parent, dept:r.dept, deptName:d.name, tint:d.tint,
       title:r.title || "", personality:r.personality || "", context:r.context || "",
       task:r.task || "", outcome:r.outcome || "", guardrails:r.guardrails || "",
@@ -2624,6 +2735,7 @@ async function flushPersonaSave(){
       look:{ skin:r.look.skin || "", style:r.look.style }
     }});
     if(res && res.version) r.version = Number(res.version) || r.version;
+    if(res && res.rowVersion) r.rowVersion = Number(res.rowVersion) || r.rowVersion;
   }catch(err){
     if(err.code === "CONFLICT"){
       showBanner("<b>Another device saved first.</b> “" + esc(r.title) +
@@ -4193,6 +4305,14 @@ addEventListener("keydown", e => {
 /* main pane interactions */
 $("#paneMain").addEventListener("click", e => {
   const t = e.target;
+  const epr = t.closest("[data-endpoint-reset]");
+  if(epr){
+    setEndpoint("");
+    renderMain();
+    if($("#epStatus")) $("#epStatus").textContent = "Back on the built-in endpoint — connecting…";
+    scheduleReconnect();
+    return;
+  }
   const tog = t.closest("[data-toggle]");
   if(tog){ const k = tog.dataset.toggle; state[k] = !state[k]; tog.querySelector(".tog").classList.toggle("on", state[k]); applyChrome(); return; }
   const theme = t.closest("[data-theme]");
@@ -4211,8 +4331,22 @@ $("#paneMain").addEventListener("click", e => {
 $("#paneMain").addEventListener("input", e => {
   const tok = e.target.closest("[data-token]");
   if(tok){
-    setToken(tok.value);
-    if($("#epStatus")) $("#epStatus").textContent = getToken() ? "Connecting to the Sheet…" : connStatusText();
+    const got = applyTokenInput(tok.value);
+    const status = $("#epStatus");
+    if(got.kind === "badUrl"){
+      if(status) status.textContent = "That looks like a link, but not a Web app URL — copy the one ending in /exec from Deploy › Manage deployments.";
+      return;   // store nothing; a wrong URL must not clobber a working setup
+    }
+    if(got.kind === "urlWithToken" || got.kind === "urlOnly"){
+      /* the field keeps showing the token; the endpoint lives on its own row */
+      tok.value = got.token || "";
+      renderMain();
+      if($("#epStatus")) $("#epStatus").textContent = got.kind === "urlWithToken"
+        ? "Endpoint and token saved from the pasted URL — connecting…"
+        : "Endpoint saved — still needs the access token. Connecting…";
+    }else if(status){
+      status.textContent = getToken() ? "Connecting to the Sheet…" : connStatusText();
+    }
     scheduleReconnect();
     return;
   }
