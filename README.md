@@ -41,6 +41,24 @@ Deploy → Manage deployments → ✏️ → Version: **New version** → Deploy
 the script alone does not update the live `/exec` URL — and a brand-new
 deployment mints a *new* URL, which you then paste into Settings → Chat once.
 
+## Switching who answers, mid-conversation
+
+A chat does not have to belong to one person. The bar above the message box
+lists everyone in the current conversation and who is answering right now;
+**+ Bring in** adds anyone from the chart, and one tap on a chip hands the
+thread to them. Nothing is lost in the handover — the transcript stays whole,
+each reply is marked with its author's icon and title, and the newcomer can be
+put straight onto the question already on the table with **Ask them the same
+question**.
+
+Each persona answers from its own brief and sees its colleagues' replies
+quoted and attributed, never as words of its own — so Legal can disagree with
+Marketing in the same thread, and you can read which of them said what.
+
+Picking someone from the chart or the outline still opens *their* own
+conversation, exactly as before; only people already in the current
+conversation stay in it when you click them.
+
 ## Voice accuracy
 
 Settings → Voice accuracy reads ten test phrases aloud for you to repeat and

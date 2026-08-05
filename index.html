@@ -564,6 +564,60 @@ body.no-motion .spinner{animation-duration:1.6s}
 /* jump-to-message highlight from history search */
 .msg.hl .bubble{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 55%,transparent)}
 
+/* ---------- who is answering ----------
+   A conversation can be handed to another persona without losing the thread.
+   The moment more than one has taken part, every reply wears its author's mark
+   and name, so the transcript reads unambiguously. Single-persona chats — the
+   common case — render exactly as they always have: no mark, no label. Each
+   tagged row carries its own --tint inline, so the colour is the speaker's
+   department, not the selected persona's. */
+.msg.tagged{align-items:flex-start;gap:9px}
+.msg.tagged .who{flex:none;margin-top:-1px}
+.msg.tagged .who .avatar{width:26px;height:26px;display:block}
+.msg.tagged .said{min-width:0;max-width:min(68%,560px);display:flex;flex-direction:column;gap:3px;align-items:flex-start}
+.msg.tagged .whoName{
+  font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:color-mix(in srgb,var(--tint) 78%,var(--label2));padding-left:4px;
+}
+body.dark .msg.tagged .whoName{color:color-mix(in srgb,var(--tint) 80%,#fff)}
+.msg.tagged .bubble{max-width:100%}
+/* the hand-off marker left in the thread when the assistant changes */
+.msg.handoff{justify-content:center}
+.handoffPill{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;
+  padding:5px 13px 5px 5px;border-radius:999px;font-size:12.5px;color:var(--label2);
+  background:color-mix(in srgb,var(--tint) 13%,var(--field));
+}
+.handoffPill .avatar{width:22px;height:22px;flex:none;display:block}
+.handoffPill b{color:var(--label);font-weight:600}
+.handoffPill button{color:var(--accent);font-weight:600;font-size:12.5px}
+/* the cast: everyone in this conversation, one tap to hand it to any of them */
+.castBar{display:none;align-items:center;gap:8px;flex:none;padding:9px 14px 0}
+.card.chatting .castBar{display:flex}
+.castRow{
+  display:flex;align-items:center;gap:6px;flex:1;min-width:0;
+  overflow-x:auto;scrollbar-width:none;padding-bottom:2px;
+}
+.castRow::-webkit-scrollbar{display:none}
+.castChip{
+  display:flex;align-items:center;gap:7px;flex:none;max-width:210px;
+  padding:4px 12px 4px 4px;border-radius:999px;background:var(--field);
+  font-size:13px;color:var(--label2);transition:transform .3s var(--spring);
+}
+.castChip:active{transform:scale(.96)}
+.castChip .avatar{width:22px;height:22px;flex:none;display:block}
+.castChip .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.castChip.on{
+  color:var(--label);font-weight:600;
+  background:color-mix(in srgb,var(--tint) 15%,transparent);
+  box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--tint) 45%,transparent);
+}
+.castAdd{
+  flex:none;padding:6px 12px;border-radius:999px;background:var(--field);
+  color:var(--accent);font-size:13px;font-weight:600;transition:transform .3s var(--spring);
+}
+.castAdd:active{transform:scale(.96)}
+
 /* ---------- ambient listening ---------- */
 .speak.pulse{position:relative}
 .speak.pulse::after{
@@ -784,6 +838,10 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
       <button id="ambientLogBtn" aria-expanded="false">Log</button>
     </div>
   </div>
+  <div class="castBar" id="castBar">
+    <div class="castRow" id="castRow" aria-label="People in this conversation"></div>
+    <button class="castAdd" id="castAdd" aria-label="Bring another role into this conversation">+ Bring in</button>
+  </div>
   <div class="cardFoot" id="footBrief"><button class="wideBtn ghost" id="cardEdit">Edit this role</button></div>
   <div class="composer">
     <div class="micNotice" id="micNotice" hidden aria-hidden="true"></div>
@@ -821,7 +879,7 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
 <section class="sheet picker" id="picker" role="dialog" aria-modal="true" aria-label="Switch role">
   <div class="sheetNav">
     <button class="navAct" hidden aria-hidden="true"></button>
-    <div class="t">Switch role</div>
+    <div class="t" id="pickerTitle">Switch role</div>
     <button class="navAct right" id="pickerDone">Done</button>
   </div>
   <div class="search">
@@ -1248,7 +1306,13 @@ function normalizeRoles(){
   });
 }
 let state = structuredClone(DEFAULTS);
-let selectedId = null, editingId = null;
+/* selectedId — the persona who answers the next message.
+   convId     — the conversation on screen, and the key into threads/archives/
+                pinned/pending/inflight. It is normally the same id: a
+                conversation is keyed by whoever started it. Handing the
+                conversation to a second persona moves selectedId alone, which
+                is what keeps one transcript while the answers change hands. */
+let selectedId = null, convId = null, editingId = null;
 const $ = (s,r=document)=>r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const roleById = id => state.roles.find(r => r.id === id);
@@ -1641,6 +1705,13 @@ function applyChrome(){
      { action:"chat", roleId, roleTitle, company, system, promptHash,
        promptVersion, personaVersion, temperature, webSearch,
        messages:[{role,content}] }        -> { "reply": "text" }
+
+   One conversation can be answered by several personas in turn (see
+   "who is in the conversation" below). Every chat call still speaks
+   for exactly one of them — roleId, system and promptHash are that
+   persona's — and the server needs no knowledge of the others: a
+   colleague's earlier answer arrives quoted and attributed inside a
+   user turn, which is where the person asking would have put it.
      { action:"classify", roleId, roleTitle, company, task, context,
        utterance, transcriptConfidence,
        recent, instruction }              -> { needs_answer, normalized_question,
@@ -1681,11 +1752,47 @@ function applyChrome(){
    fingerprints; a mismatch is rejected as STALE_BRIEF rather than
    answered. Keep the Anthropic key in Script Properties — never here.
 ================================================================= */
-const threads = {};              // roleId -> [{role:"user"|"assistant", content, error, note}]
-const archives = {};             // roleId -> [{at, end, hash, messages}] — cleared conversations, memory only
+const threads = {};              // convId -> [{role:"user"|"assistant", content, speaker, error, note}]
+const archives = {};             // convId -> [{at, end, pins, participants, messages}] — cleared conversations, memory only
 let tab = "chat";
-const pending = new Set();       // roleIds with an answer in flight
-const inflight = new Map();      // roleId -> AbortController for that answer
+const pending = new Set();       // convIds with an answer in flight
+const inflight = new Map();      // convId -> AbortController for that answer
+
+/* =================================================================
+   WHO IS IN THE CONVERSATION
+
+   A conversation is keyed by the persona who started it and lists
+   everyone who has since been handed the thread. One persona in the
+   list is the ordinary case and behaves exactly as it always did.
+
+   Assistant messages carry `speaker` — the persona who wrote them —
+   so a transcript stays readable no matter who answered what, and so
+   the next persona can be shown its colleagues' answers as quoted
+   context rather than as words it supposedly said itself.
+
+   Brief pins are per conversation AND per persona: two personas in
+   one thread each answer from their own brief, and each is pinned to
+   the version of it that was live when they first spoke.
+================================================================= */
+const participants = {};                       // convId -> [roleId] in the order they joined
+const partsOf = k => (k ? (participants[k] || [k]) : []);
+const castOf = k => partsOf(k).filter(roleById);
+const inConv = (k, id) => partsOf(k).indexOf(id) >= 0;
+function joinConv(k, id){
+  if(!k || !id) return;
+  const p = participants[k] || (participants[k] = [k]);
+  if(p.indexOf(id) < 0) p.push(id);
+}
+const pinKey = (k, id) => k + " " + id;
+/* who spoke last in a conversation — where "open this conversation" lands */
+function lastSpeaker(k){
+  const t = threads[k] || [];
+  for(let i = t.length - 1; i >= 0; i--){
+    const id = t[i].switchTo || t[i].speaker;
+    if(id && roleById(id)) return id;
+  }
+  return roleById(k) ? k : (rootRole() || {}).id;
+}
 
 /* =================================================================
    PROMPT FIDELITY
@@ -1758,6 +1865,48 @@ function buildPrompt(role){
   return { text, hash: fnv1a(PROMPT_VERSION + "|" + text), missing, segments: seg.length };
 }
 
+/* The wire history for one persona, from a thread any number of personas may
+   have answered in.
+
+   Its own replies stay assistant turns, verbatim — a single-persona thread
+   produces exactly the array this app has always sent. A colleague's reply is
+   NOT sent as an assistant turn: the persona never said it, and a model told
+   otherwise will defend or repeat someone else's position. It is folded into
+   the next thing the user says, attributed and quoted, which is the truth of
+   what happened — the user showed them what Marketing answered and then asked
+   their question.
+
+   The attribution can't live in the system prompt: the server rebuilds that
+   from the Sheet and rejects any prompt whose fingerprint doesn't match, so
+   every word of context has to travel in the messages.
+
+   Same-role runs are then coalesced, because a turn dropped for any reason
+   (an errored reply, a colleague's answer folded away) can leave two user
+   turns adjacent, and providers want them strictly alternating. */
+function wireHistory(history, speakerId){
+  const out = [];
+  let quoted = [];
+  history.filter(m => !m.error && !m.note).forEach(m => {
+    if(m.role === "user"){
+      out.push({ role:"user", content: quoted.concat(m.content).join("\n\n") });
+      quoted = [];
+    }else if(!m.speaker || m.speaker === speakerId){
+      out.push({ role:"assistant", content: m.content });
+    }else{
+      const r = roleById(m.speaker);
+      quoted.push("[" + ((r && r.title) || "A colleague") +
+        " answered this earlier in the same conversation — their words, not yours]\n" + displayText(m));
+    }
+  });
+  if(quoted.length) out.push({ role:"user", content: quoted.join("\n\n") });
+  return out.reduce((acc, m) => {
+    const last = acc[acc.length - 1];
+    if(last && last.role === m.role) last.content += "\n\n" + m.content;
+    else acc.push({ role:m.role, content:m.content });
+    return acc;
+  }, []);
+}
+
 const CHAT_TIMEOUT_MS = 45000;   // per attempt; the retry chain runs at most two
 const Agent = {
   buildSystem(role){ return buildPrompt(role).text; },
@@ -1782,7 +1931,7 @@ const Agent = {
       temperature: FIDELITY.temperature,
       channel: (lastUser && lastUser.channel) || "chat",
       webSearch: true,
-      messages: history.filter(m => !m.error).map(m => ({ role:m.role, content:m.content }))
+      messages: wireHistory(history, role.id)
     };
     if(lastUser && typeof lastUser.confidence === "number") payload.transcriptConfidence = lastUser.confidence;
     try{
@@ -2190,40 +2339,74 @@ const STARTERS = [
   "What do you need from me this week?",
   "Walk me through your latest update."
 ];
-const pinned = {};   // roleId -> prompt hash captured on the first message of a thread
+/* pinKey(conversation, persona) -> prompt hash, captured the first time that
+   persona answers in that conversation */
+const pinned = {};
 /* Clearing a conversation moves it into the in-memory archive instead of
-   destroying it, so History can still find it. The pin travels with the
-   conversation: a fresh thread pins the current brief, and restoring an
-   archived one brings its original hash back. */
-function archiveThread(roleId){
-  const t = threads[roleId];
-  delete threads[roleId];
-  const hash = pinned[roleId];
-  delete pinned[roleId];
+   destroying it, so History can still find it. The pins travel with the
+   conversation — one per persona who spoke in it — so restoring an archived
+   one brings back each speaker's original hash. */
+function archiveThread(key){
+  const t = threads[key];
+  delete threads[key];
+  const cast = partsOf(key);
+  delete participants[key];
+  const pins = {};
+  cast.forEach(id => {
+    const pk = pinKey(key, id);
+    if(pinned[pk]){ pins[id] = pinned[pk]; delete pinned[pk]; }
+  });
   if(t && t.some(m => !m.error)){
-    (archives[roleId] = archives[roleId] || []).unshift({
-      at: t[0].at || Date.now(), end: Date.now(), hash, messages: t
+    (archives[key] = archives[key] || []).unshift({
+      at: t[0].at || Date.now(), end: Date.now(), pins, participants: cast, messages: t
     });
   }
 }
 function threadNotices(r){
   const built = buildPrompt(r);
+  const pin = pinned[pinKey(convId, r.id)];
   let html = "";
   if(built.missing.length){
     html += `<div class="notice warn"><b>This brief is incomplete</b>
       Missing ${esc(built.missing.join(", "))}. Messaging is off until it's filled in, so no answer
       can come from a half-written persona.<br><button data-fixrole>Complete the brief</button></div>`;
   }
-  if(pinned[r.id] && pinned[r.id] !== built.hash){
+  if(pin && pin !== built.hash){
     html += `<div class="notice info"><b>The brief changed mid-conversation</b>
-      Replies so far used ${esc(pinned[r.id])}. The current brief is ${esc(built.hash)}.
+      Replies so far used ${esc(pin)}. The current brief is ${esc(built.hash)}.
       <br><button data-adopt>Use the updated brief</button></div>`;
   }
   return html;
 }
-const msgHTML = m => `<div class="msg ${m.role === "user" ? "me" : "from"} ${m.note ? "note" : m.error ? "err" : ""}">
-        <div class="bubble">${esc(displayText(m))}</div></div>`;
-let lastThreadRole = null;
+/* o.speakers — tag replies with who wrote them (set once a conversation has
+   more than one persona in it). o.reask — this hand-off is the newest thing in
+   the thread and there is a question to put to the new persona.
+   Never passed straight to .map(): the second argument would be the index. */
+function msgHTML(m, o){
+  o = o || {};
+  if(m.switchTo){
+    const r = roleById(m.switchTo);
+    /* a removed role still leaves its marker behind — every message keeps one
+       node, which is what History's jump-to-message index counts on */
+    if(!r) return `<div class="msg note"><div class="bubble">${esc(displayText(m))}</div></div>`;
+    return `<div class="msg handoff" style="--tint:${deptOf(r).tint}"><div class="handoffPill">
+        ${avatarSVG(r, "", 22)}
+        <span>Now asking <b>${esc(r.title)}</b></span>
+        ${o.reask ? `<button data-reask>Ask them the same question</button>` : ""}
+      </div></div>`;
+  }
+  const kind = m.role === "user" ? "me" : "from";
+  const tone = m.note ? "note" : m.error ? "err" : "";
+  const speaker = (o.speakers && m.role === "assistant" && !m.note && !m.error)
+    ? roleById(m.speaker) : null;
+  const bubble = `<div class="bubble">${esc(displayText(m))}</div>`;
+  if(!speaker) return `<div class="msg ${kind} ${tone}">${bubble}</div>`;
+  return `<div class="msg from tagged" style="--tint:${deptOf(speaker).tint}">
+      <span class="who">${avatarSVG(speaker, "", 26)}</span>
+      <div class="said"><span class="whoName">${esc(speaker.title)}</span>${bubble}</div>
+    </div>`;
+}
+let lastThreadKey = null;
 function renderThread(){
   const r = roleById(selectedId), box = $("#thread");
   if(!r) return;
@@ -2234,14 +2417,15 @@ function renderThread(){
   $("#mic").disabled = blocked;
   if(blocked && dictTarget.main) Dictation.stop();
   /* Scroll preservation: a re-render keeps the reader's place. Only a render
-     that switched personas, or one where the reader was already at the
+     that switched conversations, or one where the reader was already at the
      bottom, snaps to the newest message. */
-  const sameRole = lastThreadRole === r.id;
+  const sameConv = lastThreadKey === convId;
   const wasAt = box.scrollTop;
   const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 48;
-  lastThreadRole = r.id;
-  const t = threads[r.id] || [];
-  if(!t.length && !pending.has(r.id)){
+  lastThreadKey = convId;
+  const t = threads[convId] || [];
+  renderCast();
+  if(!t.length && !pending.has(convId)){
     box.innerHTML = threadNotices(r) + `<div class="empty">
       ${avatarSVG(r, "", 78)}
       <h4>${esc(r.title)}</h4>
@@ -2253,21 +2437,40 @@ function renderThread(){
   }
   const time = new Date(t[0]?.at || Date.now())
     .toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
+  const speakers = castOf(convId).length > 1;
+  const lastIdx = t.length - 1;
+  const asked = t.some(m => m.role === "user" && !m.error);
   box.innerHTML =
     threadNotices(r) +
     `<div class="stamp">Today ${time}</div>` +
     `<div class="clearBar"><button data-clear>Clear conversation</button></div>` +
-    t.map(msgHTML).join("") +
-    (pending.has(r.id) ? `<div class="msg from"><div class="dots"><i></i><i></i><i></i></div></div>` : "");
-  if(!sameRole || nearBottom) box.scrollTop = box.scrollHeight;
+    t.map((m, i) => msgHTML(m, { speakers, reask: i === lastIdx && asked && !blocked })).join("") +
+    (pending.has(convId) ? `<div class="msg from"><div class="dots"><i></i><i></i><i></i></div></div>` : "");
+  if(!sameConv || nearBottom) box.scrollTop = box.scrollHeight;
   else box.scrollTop = wasAt;
   refreshSendUI();
+}
+/* The cast bar: everyone in this conversation, the current answerer marked,
+   one tap to hand the thread to any of them. It is the whole feature in one
+   row — who you are talking to, who else is here, and how to add someone. */
+function renderCast(){
+  const cast = castOf(convId);
+  if(cast.indexOf(selectedId) < 0 && roleById(selectedId)) cast.unshift(selectedId);
+  $("#castRow").innerHTML = cast.map(id => {
+    const r = roleById(id);
+    return `<button class="castChip ${id === selectedId ? "on" : ""}" style="--tint:${deptOf(r).tint}"
+        data-cast="${esc(id)}" ${id === selectedId ? 'aria-current="true"' : ""}
+        title="${id === selectedId ? "Answering now" : "Hand this conversation to " + esc(r.title)}">
+        ${avatarSVG(r, "", 22)}<span class="nm">${esc(r.title)}</span>
+      </button>`;
+  }).join("");
+  $("#castAdd").textContent = cast.length > 1 ? "+ Add" : "+ Bring in";
 }
 /* The send button doubles as the cancel control while this persona's answer
    is in flight — there is always a live control, never a stuck spinner. */
 function refreshSendUI(){
   const btn = $("#send"), input = $("#composerInput");
-  const busy = pending.has(selectedId);
+  const busy = pending.has(convId);
   btn.classList.toggle("stop", busy);
   btn.querySelector(".icoSend").hidden = busy;
   btn.querySelector(".icoStop").hidden = !busy;
@@ -2294,27 +2497,32 @@ function friendlyError(err){
   return "Couldn't get a reply (" + (err.code ? err.code + ": " : "") + err.message + ")." + tail +
     " Check your access token in Settings › Chat, and that the Apps Script deployment allows access to anyone.";
 }
-function cancelAnswer(roleId, silent){
-  const ctl = inflight.get(roleId);
+function cancelAnswer(key, silent){
+  const ctl = inflight.get(key);
   if(!ctl) return;
   if(silent) ctl.silent = true;   // abort without leaving a "stopped" note (used by Clear)
   ctl.abort();
 }
-/* One send pipeline for every asker. `src.input` is the composer the text
-   came from (undefined for starters and ambient asks); answers land in the
-   persona's thread no matter which window asked. Answers to different
-   personas can be in flight at once — pending/inflight are per persona, so
-   the pop-out and the main composer never trip over each other.
+/* One send pipeline for every asker. `key` is the conversation the message
+   belongs to and `roleId` the persona answering it — the same id in an
+   ordinary chat, two different ones once a conversation has been handed on.
+   `src.input` is the composer the text came from (undefined for starters and
+   ambient asks); answers land in the conversation no matter which window
+   asked. Answers to different conversations can be in flight at once —
+   pending/inflight are per conversation, so the pop-out and the main composer
+   never trip over each other, and two personas can never write into one
+   transcript at the same time.
    src.vm overrides the channel metadata (ambient asks log channel "voice"
    with the classifier confidence); src.speak forces the reply through TTS
    regardless of the per-persona speaker toggle. Returns the outcome:
    "answered" | "failed" | "canceled" | "blocked". */
-async function sendTo(roleId, text, src){
+async function sendTo(key, roleId, text, src){
   const r = roleById(roleId);
-  if(!r || !text.trim() || pending.has(roleId)) return "blocked";
+  if(!r || !key || !text.trim() || pending.has(key)) return "blocked";
   const built = buildPrompt(r);
-  if(built.missing.length){ if(selectedId === roleId) renderThread(); return "blocked"; }
-  if(!pinned[r.id]) pinned[r.id] = built.hash;
+  if(built.missing.length){ if(convId === key) renderThread(); return "blocked"; }
+  joinConv(key, roleId);
+  if(!pinned[pinKey(key, r.id)]) pinned[pinKey(key, r.id)] = built.hash;
   const input = src && src.input;
   /* per-message channel flag: "voice" only when this composer draft was
      dictated; starters and typed messages stay "chat". Dictation always
@@ -2327,44 +2535,44 @@ async function sendTo(roleId, text, src){
       ? consumeVoiceMeta() : { channel:"chat" });
   if(input && dictTarget.input === input) discardDictation();
   Speech.stop();
-  threads[roleId] = threads[roleId] || [];
-  threads[roleId].push({ role:"user", content:text.trim(), at:Date.now(), channel:vm.channel, confidence:vm.confidence });
+  threads[key] = threads[key] || [];
+  threads[key].push({ role:"user", content:text.trim(), at:Date.now(), to:roleId, channel:vm.channel, confidence:vm.confidence });
   if(input){ input.value = ""; if(src.reset) src.reset(); }
   const ctl = new AbortController();
-  inflight.set(roleId, ctl);
-  pending.add(roleId);
+  inflight.set(key, ctl);
+  pending.add(key);
   VoiceState.set("thinking", roleId);
   /* your own send always shows itself — scroll preservation is for renders
      you didn't cause, not for the message you just wrote */
-  if(selectedId === roleId){ renderThread(); const b = $("#thread"); b.scrollTop = b.scrollHeight; }
+  if(convId === key){ renderThread(); const b = $("#thread"); b.scrollTop = b.scrollHeight; }
   renderChart(); PopOut.render(); refreshSendUI();
   let outcome = "answered";
   try{
-    const reply = await Agent.reply(r, threads[roleId], ctl.signal);
-    (threads[roleId] = threads[roleId] || []).push({ role:"assistant", content:reply, at:Date.now() });
+    const reply = await Agent.reply(r, threads[key], ctl.signal);
+    (threads[key] = threads[key] || []).push({ role:"assistant", content:reply, at:Date.now(), speaker:roleId });
     /* speak if this conversation is on screen with the speaker on, or the
        asker (ambient) asked for it outright */
-    if((selectedId === roleId && tab === "chat" && ttsOn(roleId)) || (src && src.speak)) Speech.speakReply(r, reply);
+    if((convId === key && tab === "chat" && ttsOn(roleId)) || (src && src.speak)) Speech.speakReply(r, reply);
   }catch(err){
     outcome = err.canceled ? "canceled" : "failed";
     if(!(err.canceled && ctl.silent)){
-      (threads[roleId] = threads[roleId] || []).push(err.canceled
-        ? { role:"assistant", error:true, note:true, at:Date.now(), content:"You stopped this answer." }
-        : { role:"assistant", error:true, at:Date.now(), content:friendlyError(err) });
+      (threads[key] = threads[key] || []).push(err.canceled
+        ? { role:"assistant", error:true, note:true, at:Date.now(), speaker:roleId, content:"You stopped this answer." }
+        : { role:"assistant", error:true, at:Date.now(), speaker:roleId, content:friendlyError(err) });
     }
   }finally{
     /* always executed — the UI can never be left waiting on a dead promise */
-    pending.delete(roleId);
-    inflight.delete(roleId);
+    pending.delete(key);
+    inflight.delete(key);
     VoiceState.clear("thinking", roleId);
-    if(selectedId === roleId) renderThread();
+    if(convId === key) renderThread();
     renderChart(); refreshSendUI();
-    PopOut.onAnswer(roleId);
+    PopOut.onAnswer(key);
   }
   return outcome;
 }
 function sendMessage(text){
-  sendTo(selectedId, text, {
+  sendTo(convId, selectedId, text, {
     input: $("#composerInput"),
     reset(){ $("#composerInput").style.height = "41px"; clearMainGhost(); }
   });
@@ -2408,15 +2616,25 @@ function renderCard(){
     e.target.textContent = v.hidden ? "View the exact prompt" : "Hide the prompt";
   });
 }
-function selectRole(id){
+/* The one way in to "who am I talking to". opts.conv names the conversation
+   outright (History opening an old one, a reset landing on the root). Without
+   it the rule is: a persona already in this conversation keeps it — clicking
+   them in the chart or the picker moves the question to them rather than
+   dumping you out of the thread — and anyone else brings up their own.
+   opts.keepDraft leaves what you have typed alone, which is what a hand-off
+   inside one conversation wants: write the question, then choose who answers. */
+function selectRole(id, opts){
+  opts = opts || {};
   const r = roleById(id) || rootRole();
+  if(!r) return;
   selectedId = r.id;
+  convId = opts.conv !== undefined ? opts.conv : (inConv(convId, r.id) ? convId : r.id);
   renderChart(); renderCard();
   const sel = $(".oRow.is-selected");
   if(sel) sel.scrollIntoView({block:"nearest"});
   /* only the main composer's draft dies with a persona switch — a pop-out
      dictation session belongs to its pinned persona and keeps running */
-  if(dictTarget.main) discardDictation();
+  if(dictTarget.main && !opts.keepDraft) discardDictation();
   Speech.stop();
   /* the recognizer captures for whichever persona is on screen (a pop-out
      dictation stays pinned to its own), so listening moves with the selection */
@@ -2426,11 +2644,28 @@ function selectRole(id){
   Ambient.refreshLang();   // ambient keeps running; the restart picks up this persona's locale
   renderAmbient();
   const input = $("#composerInput");
-  input.value = ""; input.style.height = "41px";
-  clearMainGhost();
+  if(!opts.keepDraft){ input.value = ""; input.style.height = "41px"; clearMainGhost(); }
   input.placeholder = "Message " + r.title;
   setTab(tab);
   if(innerWidth <= 900) showPane("chat");
+}
+/* Hand this conversation to someone else. The transcript stays; only who
+   answers next changes, marked in the thread so the reader can see where one
+   opinion ends and the next begins. An untouched conversation has nothing to
+   hand over, so it simply becomes the other persona's. */
+function switchSpeaker(id){
+  const r = roleById(id);
+  if(!r || id === selectedId) return;
+  const t = threads[convId] || [];
+  if(!t.some(m => !m.note)){ selectRole(id); return; }
+  joinConv(convId, selectedId);
+  joinConv(convId, id);
+  t.push({ role:"assistant", note:true, error:true, at:Date.now(), speaker:id, switchTo:id,
+           content:"Now asking " + r.title + "." });
+  selectRole(id, { conv: convId, keepDraft: true });
+  const box = $("#thread");
+  box.scrollTop = box.scrollHeight;
+  if(innerWidth > 900 && !$("#composerInput").disabled) $("#composerInput").focus();
 }
 function rootRole(){ return state.roles.find(r => r.parent === null) || state.roles[0]; }
 function showPane(pane){
@@ -2612,6 +2847,10 @@ function previewFor(r){
   }
   return r.task ? clip(r.task, 46) : deptOf(r).name;
 }
+/* The picker does double duty. "switch" is the original: go to that persona.
+   "bring" hands the open conversation to them instead, which is the same
+   click with a different destination for the thread. */
+let pickerMode = "switch";
 function renderPicker(){
   const q = ($("#pickerQuery").value || "").trim().toLowerCase();
   const hits = state.roles.filter(r =>
@@ -2627,12 +2866,15 @@ function renderPicker(){
     <div class="group">
       ${byDept[k].map(r => `<button class="row" data-pick="${r.id}">
         ${avatarSVG(r, "", 56)}
-        <span class="k">${esc(r.title)}<span class="preview">${esc(previewFor(r))}</span></span>
+        <span class="k">${esc(r.title)}<span class="preview">${esc(
+          inConv(convId, r.id) && r.id !== selectedId ? "Already in this conversation" : previewFor(r))}</span></span>
         ${selectedId === r.id ? `<span class="tick">✓</span>` : CHEV}
       </button>`).join("")}
     </div>`).join("");
 }
-function openPicker(){
+function openPicker(mode){
+  pickerMode = mode === "bring" ? "bring" : "switch";
+  $("#pickerTitle").textContent = pickerMode === "bring" ? "Bring into this chat" : "Switch role";
   $("#pickerQuery").value = "";
   renderPicker();
   $("#picker").classList.add("on");
@@ -2774,13 +3016,22 @@ addEventListener("resize", () => {
   else closeChart();
 });
 $("#cardEdit").addEventListener("click", () => openSettings(selectedId));
-$("#cardTop").addEventListener("click", openPicker);
+$("#cardTop").addEventListener("click", () => openPicker("switch"));
 $("#pickerDone").addEventListener("click", closePicker);
 $("#pickerQuery").addEventListener("input", renderPicker);
 $("#pickerList").addEventListener("click", e => {
   const b = e.target.closest("[data-pick]"); if(!b) return;
-  closePicker(); selectRole(b.dataset.pick);
+  const bring = pickerMode === "bring";
+  closePicker();
+  if(bring) switchSpeaker(b.dataset.pick);
+  else selectRole(b.dataset.pick);
 });
+/* the cast bar: pick who answers next, or go looking for someone new */
+$("#castRow").addEventListener("click", e => {
+  const b = e.target.closest("[data-cast]");
+  if(b) switchSpeaker(b.dataset.cast);
+});
+$("#castAdd").addEventListener("click", () => openPicker("bring"));
 
 /* messenger */
 $("#tabSeg").addEventListener("click", e => {
@@ -2789,14 +3040,26 @@ $("#tabSeg").addEventListener("click", e => {
 $("#thread").addEventListener("click", e => {
   if(e.target.closest("[data-fixrole]")){ openSettings(selectedId); return; }
   if(e.target.closest("[data-adopt]")){
-    pinned[selectedId] = buildPrompt(roleById(selectedId)).hash;
+    pinned[pinKey(convId, selectedId)] = buildPrompt(roleById(selectedId)).hash;
     renderThread(); return;
   }
   const s = e.target.closest("[data-starter]");
   if(s){ sendMessage(s.dataset.starter); return; }
+  /* Put the question that is already on the table to whoever just took over.
+     Sent without the composer as its source, so a draft you were part-way
+     through — dictated or typed — survives a button you did not aim at it. */
+  if(e.target.closest("[data-reask]")){
+    const t = threads[convId] || [];
+    const last = [...t].reverse().find(m => m.role === "user" && !m.error);
+    if(last) sendTo(convId, selectedId, last.content);
+    return;
+  }
   if(e.target.closest("[data-clear]")){
-    cancelAnswer(selectedId, true);
-    archiveThread(selectedId);
+    cancelAnswer(convId, true);
+    archiveThread(convId);
+    /* a cleared conversation starts again with whoever you were talking to */
+    convId = selectedId;
+    delete participants[convId];
     renderThread(); renderChart(); PopOut.render();
   }
 });
@@ -2822,7 +3085,7 @@ $("#composerInput").addEventListener("keydown", e => {
 });
 $("#composerInput").addEventListener("scroll", () => { $("#composerGhost").scrollTop = $("#composerInput").scrollTop; });
 $("#send").addEventListener("click", () => {
-  if(pending.has(selectedId)) cancelAnswer(selectedId);
+  if(pending.has(convId)) cancelAnswer(convId);
   else sendMessage($("#composerInput").value);
 });
 
@@ -3178,12 +3441,21 @@ function snippetHTML(text, q){
     "<mark>" + esc(plain.slice(i, i + q.length)) + "</mark>" +
     esc(clip(plain.slice(i + q.length), 60));
 }
+/* the mark and the name follow the message's own author, so a search hit in a
+   handed-over conversation shows who actually said it */
 function histHitRow(r, m, q, attr, where){
+  const who = (m.role === "assistant" && roleById(m.speaker)) || r;
   return `<button class="row" ${attr}>
-      ${avatarSVG(r, "", 34)}
+      ${avatarSVG(who, "", 34)}
       <span class="k" style="font-size:14px">${snippetHTML(m.content, q)}
-        <small>${esc(r.title)} · ${m.role === "user" ? "you" : "them"} · ${esc(where)}</small></span>${CHEV}
+        <small>${esc(who.title)} · ${m.role === "user" ? "you" : "them"} · ${esc(where)}</small></span>${CHEV}
     </button>`;
+}
+/* "Head of Marketing and General Counsel" — the cast of one conversation */
+function castLabel(ids){
+  const names = (ids || []).map(id => roleById(id)).filter(Boolean).map(r => r.title);
+  if(names.length < 2) return "";
+  return names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
 }
 function renderHistory(){
   const q = ($("#histQuery").value || "").trim().toLowerCase();
@@ -3215,11 +3487,12 @@ function renderHistory(){
   list.innerHTML = roles.map(r => {
     const live = threads[r.id] || [];
     const rows = [];
+    const withWho = ids => { const l = castLabel(ids); return l ? " · with " + esc(l) : ""; };
     if(live.length) rows.push(`<button class="row" data-live="${r.id}">
-        <span class="k">Current conversation<small>${live.length} message${live.length === 1 ? "" : "s"} · started ${fmtTime(live[0].at || Date.now())}</small></span>${CHEV}
+        <span class="k">Current conversation<small>${live.length} message${live.length === 1 ? "" : "s"} · started ${fmtTime(live[0].at || Date.now())}${withWho(partsOf(r.id))}</small></span>${CHEV}
       </button>`);
     (archives[r.id] || []).forEach((c, ci) => rows.push(`<button class="row" data-arch="${r.id}:${ci}">
-        <span class="k">${esc(firstLine(c.messages))}<small>${c.messages.length} message${c.messages.length === 1 ? "" : "s"} · cleared ${fmtTime(c.end)}</small></span>${CHEV}
+        <span class="k">${esc(firstLine(c.messages))}<small>${c.messages.length} message${c.messages.length === 1 ? "" : "s"} · cleared ${fmtTime(c.end)}${withWho(c.participants)}</small></span>${CHEV}
       </button>`));
     return `<div class="gLabel">${esc(r.title)}</div><div class="group">${rows.join("")}</div>`;
   }).join("") + `<p class="footNote">Held in memory only — closing or reloading this page clears the history.</p>`;
@@ -3230,8 +3503,9 @@ function renderHistView(roleId, convIdx){
   if(!conv){ histGoDeep(false); return; }
   $("#histTitle").textContent = r ? r.title : "Removed role";
   const canRestore = r && !(threads[roleId] || []).length;
+  const speakers = (conv.participants || []).filter(roleById).length > 1;
   $("#histView").innerHTML = `
-    <div class="histThread">${conv.messages.map(msgHTML).join("")}</div>
+    <div class="histThread">${conv.messages.map(m => msgHTML(m, { speakers })).join("")}</div>
     <div class="group" style="margin-top:10px">
       <button class="row" data-hist-copy="${roleId}:${convIdx}"><span class="k" style="color:var(--accent)">Copy transcript</span></button>
       ${canRestore ? `<button class="row" data-hist-restore="${roleId}:${convIdx}"><span class="k" style="color:var(--accent)">Continue this conversation</span></button>` : ""}
@@ -3242,7 +3516,11 @@ function renderHistView(roleId, convIdx){
 }
 function transcriptOf(messages, roleTitle){
   return messages.filter(m => !m.note)
-    .map(m => (m.role === "user" ? "You: " : (roleTitle || "Them") + ": ") + displayText(m))
+    .map(m => {
+      if(m.role === "user") return "You: " + displayText(m);
+      const who = roleById(m.speaker);
+      return ((who && who.title) || roleTitle || "Them") + ": " + displayText(m);
+    })
     .join("\n\n");
 }
 function flashMessage(index){
@@ -3256,13 +3534,16 @@ $("#histBtn").addEventListener("click", openHistory);
 $("#histDone").addEventListener("click", closeHistory);
 $("#histBack").addEventListener("click", () => { renderHistory(); histGoDeep(false); });
 $("#histQuery").addEventListener("input", renderHistory);
+/* History names a conversation, not just a persona — open it as itself and
+   land on whoever spoke in it last */
+const openConv = key => selectRole(lastSpeaker(key), { conv: key });
 $("#histList").addEventListener("click", e => {
   const live = e.target.closest("[data-live]");
-  if(live){ closeHistory(); selectRole(live.dataset.live); return; }
+  if(live){ closeHistory(); openConv(live.dataset.live); return; }
   const jump = e.target.closest("[data-jump]");
   if(jump){
     const [id, idx] = jump.dataset.jump.split(":");
-    closeHistory(); selectRole(id);
+    closeHistory(); openConv(id);
     requestAnimationFrame(() => flashMessage(+idx));
     return;
   }
@@ -3290,9 +3571,10 @@ $("#histView").addEventListener("click", async e => {
     const conv = (archives[id] || []).splice(+ci, 1)[0];
     if(!conv) return;
     threads[id] = conv.messages;
-    if(conv.hash) pinned[id] = conv.hash;
+    if(conv.participants && conv.participants.length) participants[id] = conv.participants.slice();
+    Object.keys(conv.pins || {}).forEach(rid => { pinned[pinKey(id, rid)] = conv.pins[rid]; });
     closeHistory();
-    selectRole(id);
+    openConv(id);
     renderChart(); PopOut.render();
   }
 });
@@ -3389,6 +3671,19 @@ textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent
 .badgeView .lbl{font-size:11.5px;color:rgba(120,120,128,.95)}
 body.collapsed .thread,body.collapsed .composer{display:none}
 body.collapsed .badgeView{display:flex}
+.msg.tagged{align-items:flex-start;gap:6px}
+.msg.tagged .who{flex:none}
+.msg.tagged .who .avatar{width:20px;height:20px;display:block}
+.msg.tagged .said{display:flex;flex-direction:column;gap:2px;min-width:0;max-width:86%}
+.msg.tagged .whoName{font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tint);padding-left:3px}
+.msg.tagged .bubble{max-width:100%}
+.msg.handoff{justify-content:center}
+.handoffPill{
+  display:flex;align-items:center;gap:6px;padding:3px 10px 3px 4px;border-radius:999px;
+  background:rgba(120,120,128,.16);color:rgba(120,120,128,.95);font-size:11px;
+}
+.handoffPill .avatar{width:18px;height:18px;display:block;flex:none}
+.handoffPill b{font-weight:700}
 .avatar .mark{transform-box:fill-box;transform-origin:50% 50%;animation:breathe 5.2s ease-in-out infinite}
 .avatar .wave rect{transform-box:fill-box;transform-origin:50% 50%}
 .avatar .ring{opacity:0}
@@ -3396,11 +3691,11 @@ body.collapsed .badgeView{display:flex}
 @media (prefers-reduced-motion:reduce){.avatar .mark{animation:none}}
 `;
 const PopOut = {
-  win:null, roleId:null, collapsed:false, missed:0, els:null, dict:null, _nT:null,
+  win:null, convId:null, roleId:null, collapsed:false, missed:0, els:null, dict:null, _nT:null,
   supported(){ return "documentPictureInPicture" in window; },
-  async open(roleId){
+  async open(key, roleId){
     if(!this.supported()) return;
-    if(this.win){ this.pin(roleId); try{ this.win.focus(); }catch(e){} return; }
+    if(this.win){ this.pin(key, roleId); try{ this.win.focus(); }catch(e){} return; }
     let win;
     try{ win = await documentPictureInPicture.requestWindow({ width:380, height:560 }); }
     catch(err){ showBanner("Couldn't open the pop-out chat (" + esc(err.message) + ")."); return; }
@@ -3465,7 +3760,7 @@ const PopOut = {
       if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); this.send(); }
     });
     this.els.send.addEventListener("click", () => {
-      if(pending.has(this.roleId)) cancelAnswer(this.roleId);
+      if(pending.has(this.convId)) cancelAnswer(this.convId);
       else this.send();
     });
     this.els.mic.hidden = !Dictation.supported();
@@ -3482,14 +3777,16 @@ const PopOut = {
     this.els.collapse.addEventListener("click", () => this.setCollapsed(!this.collapsed));
     this.els.expand.addEventListener("click", () => this.setCollapsed(false));
     win.addEventListener("pagehide", () => this._closed());
-    this.pin(roleId);
+    this.pin(key, roleId);
     refreshPipBtn();
   },
-  /* (re)bind the window to a persona and paint everything from state */
-  pin(roleId){
+  /* (re)bind the window to a conversation and the persona answering in it,
+     then paint everything from state */
+  pin(key, roleId){
     if(!this.win) return;
     const r = roleById(roleId);
     if(!r){ this.close(); return; }
+    this.convId = key || roleId;
     this.roleId = roleId;
     const d = deptOf(r);
     this.els.doc.title = r.title + " — " + state.company;
@@ -3502,11 +3799,11 @@ const PopOut = {
     this.els.input.placeholder = "Message " + r.title;
     this.render();
   },
-  retheme(){ if(this.win) this.pin(this.roleId); },
+  retheme(){ if(this.win) this.pin(this.convId, this.roleId); },
   close(){ const w = this.win; this._closed(); if(w){ try{ w.close(); }catch(e){} } },
   _closed(){
     if(this.dict && dictTarget === this.dict){ discardDictation(); dictTarget = mainDict; }
-    this.win = null; this.roleId = null; this.els = null; this.dict = null;
+    this.win = null; this.convId = null; this.roleId = null; this.els = null; this.dict = null;
     this.collapsed = false; this.missed = 0;
     refreshPipBtn();
   },
@@ -3525,7 +3822,7 @@ const PopOut = {
       return;
     }
     const el = this.els.input;
-    sendTo(this.roleId, el.value, { input: el, reset: () => { el.style.height = "34px"; } });
+    sendTo(this.convId, this.roleId, el.value, { input: el, reset: () => { el.style.height = "34px"; } });
     this.els.thread.scrollTop = this.els.thread.scrollHeight;
   },
   flashNotice(msg){
@@ -3538,7 +3835,7 @@ const PopOut = {
   },
   refreshSend(){
     if(!this.win) return;
-    const busy = pending.has(this.roleId);
+    const busy = pending.has(this.convId);
     const s = this.els.send;
     s.classList.toggle("stop", busy);
     s.classList.toggle("primary", !busy);
@@ -3550,19 +3847,20 @@ const PopOut = {
   render(){
     if(!this.win) return;
     const box = this.els.thread;
-    const t = threads[this.roleId] || [];
+    const t = threads[this.convId] || [];
+    const speakers = castOf(this.convId).length > 1;
     const wasAt = box.scrollTop;
     const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-    box.innerHTML = (t.length || pending.has(this.roleId))
-      ? t.map(msgHTML).join("") +
-        (pending.has(this.roleId) ? `<div class="msg from"><div class="dots"><i></i><i></i><i></i></div></div>` : "")
+    box.innerHTML = (t.length || pending.has(this.convId))
+      ? t.map(m => msgHTML(m, { speakers })).join("") +
+        (pending.has(this.convId) ? `<div class="msg from"><div class="dots"><i></i><i></i><i></i></div></div>` : "")
       : `<div class="empty">This window stays pinned to this persona, even while the main app browses others. Ask something below.</div>`;
     box.scrollTop = nearBottom ? box.scrollHeight : wasAt;
     this.refreshSend();
   },
   /* called after every completed answer, success or failure */
-  onAnswer(roleId){
-    if(!this.win || roleId !== this.roleId) return;
+  onAnswer(key){
+    if(!this.win || key !== this.convId) return;
     if(this.collapsed){
       this.missed++;
       this.els.count.textContent = this.missed;
@@ -3588,7 +3886,7 @@ const PopOut = {
   },
   async copyLast(){
     if(!this.win) return;
-    const t = threads[this.roleId] || [];
+    const t = threads[this.convId] || [];
     const last = [...t].reverse().find(m => m.role === "assistant" && !m.error);
     if(!last){ this.flashNotice("No answer to copy yet."); return; }
     const btn = this.els.copy;
@@ -3612,10 +3910,10 @@ function refreshPipBtn(){
    an open pop-out: re-pin it to fresh data, or close it if its persona is gone */
 function syncPip(){
   if(!PopOut.win) return;
-  if(roleById(PopOut.roleId)) PopOut.pin(PopOut.roleId);
+  if(roleById(PopOut.roleId)) PopOut.pin(PopOut.convId, PopOut.roleId);
   else PopOut.close();
 }
-$("#pipBtn").addEventListener("click", () => PopOut.open(selectedId));
+$("#pipBtn").addEventListener("click", () => PopOut.open(convId, selectedId));
 
 /* =================================================================
    AMBIENT — always-on listening that answers questions it overhears.
@@ -3870,7 +4168,9 @@ const Ambient = {
       return;
     }
     this.recent.push({ norm, at: now });
-    this.enqueue({ text, roleId: selectedId, at: now, tconf });
+    /* both are captured now: the answer belongs in the conversation that was
+       open when the question was overheard, from the persona then answering */
+    this.enqueue({ text, roleId: selectedId, conv: convId, at: now, tconf });
   },
   enqueue(item){
     if(this.queue.length >= AMBIENT.QUEUE_CAP){
@@ -3917,14 +4217,14 @@ const Ambient = {
     this.log("ok", q, (v.topic ? v.topic + " — " : "") + "answering" + conf);
     /* the persona may already be answering a typed message — wait our turn */
     const waitUntil = Date.now() + 60000;
-    while(pending.has(item.roleId) && this.armed && Date.now() < waitUntil)
+    while(pending.has(item.conv) && this.armed && Date.now() < waitUntil)
       await new Promise(res => setTimeout(res, 500));
     if(!this.armed) return;
-    if(pending.has(item.roleId)){ this.log("fail", q, "gave up waiting for the busy thread"); return; }
+    if(pending.has(item.conv)){ this.log("fail", q, "gave up waiting for the busy thread"); return; }
     this.setStage("answering", q);
     /* the message's confidence feeds the Messages tab's TranscriptConfidence
        column — the engine's number when it gave one, else the classifier's */
-    const outcome = await sendTo(item.roleId, q, {
+    const outcome = await sendTo(item.conv, item.roleId, q, {
       vm: { channel:"voice", confidence: typeof item.tconf === "number" ? item.tconf : v.confidence },
       speak: true
     });
@@ -3936,7 +4236,7 @@ const Ambient = {
   },
   async classify(item, signal){
     const r = roleById(item.roleId);
-    const recent = (threads[item.roleId] || []).filter(m => !m.error).slice(-4)
+    const recent = (threads[item.conv] || []).filter(m => !m.error).slice(-4)
       .map(m => ({ role: m.role, content: String(m.content).slice(0, 400) }));
     const data = await sheetCall({
       action:"classify",
@@ -3988,7 +4288,7 @@ const Ambient = {
       try{ this.stageCtl.abort(); }catch(e){}
     }else if(this.stage === "answering" && age > this.ANSWER_CEILING_MS && this.current){
       this._wd = true;
-      cancelAnswer(this.current.roleId, true);
+      cancelAnswer(this.current.conv, true);
     }
   },
   setStage(stage, text){
@@ -4425,14 +4725,23 @@ function deleteRole(){
     setTimeout(() => { armedDelete = false; if(editingId === r.id) renderRolePane(); }, 4000);
     return;
   }
-  const wasSelected = selectedId === r.id;
+  const wasSelected = selectedId === r.id, wasConv = convId === r.id;
   state.roles = state.roles.filter(x => x.id !== r.id);
   cancelAnswer(r.id, true);
   delete threads[r.id];
   delete archives[r.id];
-  if(PopOut.roleId === r.id) PopOut.close();
+  /* the conversations this role was a guest in outlive it — drop it from their
+     cast so it stops appearing in the bar, and leave its messages in place */
+  delete participants[r.id];
+  Object.keys(participants).forEach(k => {
+    participants[k] = participants[k].filter(id => id !== r.id);
+  });
+  if(PopOut.roleId === r.id || PopOut.convId === r.id) PopOut.close();
   armedDelete = false; renderMain(); goDeep(false); renderChart();
-  if(wasSelected) selectRole(rootRole().id);
+  if(wasSelected || wasConv){
+    const root = rootRole();
+    selectRole(root.id, { conv: wasConv ? root.id : convId });
+  }
 }
 let armedReset = false;
 function mainAction(act, el){
@@ -4458,7 +4767,9 @@ function mainAction(act, el){
     [...inflight.keys()].forEach(id => cancelAnswer(id, true));
     Object.keys(threads).forEach(k => delete threads[k]);
     Object.keys(archives).forEach(k => delete archives[k]);
-    renderMain(); applyChrome(); renderChart(); selectRole(rootRole().id);
+    Object.keys(participants).forEach(k => delete participants[k]);
+    Object.keys(pinned).forEach(k => delete pinned[k]);
+    renderMain(); applyChrome(); renderChart(); selectRole(rootRole().id, { conv: rootRole().id });
     syncPip();
   }
 }
@@ -4473,7 +4784,11 @@ $("#importFile").addEventListener("change", e => {
       rebuildDepts(state.roles);
       normalizeRoles();
       setConnected(false);
-      renderMain(); goDeep(false); applyChrome(); renderChart(); selectRole(rootRole().id);
+      /* the whole cast changed identity — conversation membership from the old
+         chart means nothing against the new one */
+      Object.keys(participants).forEach(k => delete participants[k]);
+      renderMain(); goDeep(false); applyChrome(); renderChart();
+      selectRole(rootRole().id, { conv: rootRole().id });
       syncPip();
     }catch(err){
       alert("That file isn't a chart this page can read. Export one from Settings to see the expected format.");
