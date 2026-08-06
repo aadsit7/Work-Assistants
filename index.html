@@ -8,25 +8,40 @@
 <style>
 /* ---------- tokens ---------- */
 :root{
-  --bg:#EFEFF4; --wash:#F7F7FA; --card:#FFFFFF; --group:#FFFFFF; --field:#F2F2F7;
-  --label:#1D1D1F; --label2:#6E6E73; --label3:#8E8E93;
-  --sep:rgba(60,60,67,.16); --line:rgba(60,60,67,.24);
-  --accent:#0A84FF; --danger:#FF3B30;
-  --nav:rgba(247,247,250,.72);
-  --shadow:0 1px 2px rgba(0,0,0,.05), 0 10px 30px rgba(0,0,0,.09);
-  --shadow-lift:0 2px 4px rgba(0,0,0,.06), 0 18px 44px rgba(0,0,0,.14);
-  --r:22px;
-  --railW:clamp(280px,22vw,340px);
+  --bg:#FFFFFF; --wash:#FFFFFF; --card:#FFFFFF; --group:#FFFFFF; --field:#F1F1F3;
+  --label:#1D1C1D; --label2:#616061; --label3:#868686;
+  --sep:rgba(29,28,29,.13); --line:rgba(29,28,29,.2);
+  --accent:#1264A3; --danger:#E01E5A; --go:#007A5A;
+  --nav:#FFFFFF;
+  --hover:rgba(29,28,29,.04);
+  --shadow:0 1px 3px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.08);
+  --shadow-lift:0 4px 12px rgba(0,0,0,.12), 0 12px 28px rgba(0,0,0,.16);
+  --r:8px;
+  --railW:clamp(260px,20vw,300px);
   --spring:cubic-bezier(.32,.72,0,1);
-  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  --sans:"Lato",-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+
+  /* The rail is its own little theme, dark in both appearances, which is what
+     makes the workspace read as one object with a spine rather than as two
+     panes of the same white. */
+  --sb:#3F0E40; --sb-2:#350D36;
+  --sb-txt:rgba(255,255,255,.72); --sb-dim:rgba(255,255,255,.56);
+  --sb-strong:#FFFFFF;
+  --sb-hover:rgba(255,255,255,.07);
+  --sb-sep:rgba(255,255,255,.13);
 }
 body.dark{
-  --bg:#000000; --wash:#0A0A0C; --card:#1C1C1E; --group:#1C1C1E; --field:#2C2C2E;
-  --label:#F5F5F7; --label2:#A1A1A6; --label3:#8E8E93;
-  --sep:rgba(84,84,88,.55); --line:rgba(120,120,128,.45);
-  --nav:rgba(12,12,14,.72);
-  --shadow:0 1px 2px rgba(0,0,0,.6), 0 12px 34px rgba(0,0,0,.6);
-  --shadow-lift:0 2px 6px rgba(0,0,0,.7), 0 20px 50px rgba(0,0,0,.7);
+  --bg:#1A1D21; --wash:#1A1D21; --card:#1A1D21; --group:#222529; --field:#222529;
+  --label:#D1D2D3; --label2:#ABABAD; --label3:#8D8D8E;
+  --sep:rgba(255,255,255,.13); --line:rgba(255,255,255,.2);
+  --nav:#1A1D21;
+  --hover:rgba(255,255,255,.045);
+  --shadow:0 1px 3px rgba(0,0,0,.5), 0 4px 14px rgba(0,0,0,.45);
+  --shadow-lift:0 4px 14px rgba(0,0,0,.6), 0 14px 34px rgba(0,0,0,.6);
+  --sb:#121016; --sb-2:#0E0C11;
+  --sb-txt:rgba(255,255,255,.7); --sb-dim:rgba(255,255,255,.52);
+  --sb-hover:rgba(255,255,255,.06);
+  --sb-sep:rgba(255,255,255,.1);
 }
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -36,60 +51,59 @@ body{
   display:flex; flex-direction:column;
   -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
 }
-/* App shell: both columns sit in one centered composition. On an ultrawide
-   monitor the shell stops at 1560px with even wash margins on both sides —
-   the columns never stretch to fill the screen. */
-.stage{
-  flex:1;display:flex;min-height:0;
-  width:100%;max-width:1560px;margin-inline:auto;
-}
-@media (min-width:1561px){ .stage{border-inline:.5px solid var(--sep)} }
+/* App shell: the rail and the conversation, edge to edge. A workspace fills
+   its window — the centred, capped composition this used to be read as a
+   document on a desk rather than as the tool you keep open all day. */
+.stage{ flex:1;display:flex;min-height:0;width:100%; }
 /* The side menu is the app's spine: every conversation you have ever had is
-   in it, and the team you can start a new one with is one tap away. Desktop
-   keeps it open as the left column; mobile slides it in over the chat. */
+   in it, and the team you can start a new one with is directly under it.
+   Desktop keeps it open as the left column; mobile slides it in over the
+   chat. */
 .side{
   flex:none;width:var(--railW);min-width:0;
   display:flex;flex-direction:column;min-height:0;position:relative;z-index:3;
-  border-right:.5px solid var(--sep);background:var(--card);
+  background:var(--sb);color:var(--sb-txt);
 }
 body.rail-off .side{display:none}
 /* The tree needs width, so on desktop it renders only in the View chart
    overlay; this pane is its mobile home and the node it returns to on close. */
-.chartPane{display:none;flex-direction:column;min-height:0}
-body::before{
-  content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
-  background:
-    radial-gradient(60vw 50vh at 15% -5%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%),
-    radial-gradient(50vw 40vh at 95% 0%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 65%),
-    var(--wash);
-}
+.chartPane{display:none;flex-direction:column;min-height:0;background:var(--card)}
+body::before{ content:none }
 button{font-family:inherit; color:inherit; background:none; border:0; padding:0; cursor:pointer}
 input,textarea{font-family:inherit}
 :focus-visible{outline:2.5px solid var(--accent); outline-offset:3px; border-radius:8px}
 
-/* ---------- nav ---------- */
+/* ---------- nav ----------
+   The top bar belongs to the workspace, not to the page under it: it runs
+   the full width in the same dark as the rail, so the rail reads as hanging
+   off it rather than as a separate panel that happens to be dark. */
 .nav{
   position:relative; z-index:40; flex:none; display:flex; align-items:center; gap:12px;
-  padding:12px 20px calc(12px + env(safe-area-inset-bottom,0px) * 0); height:60px;
-  background:var(--nav); border-bottom:.5px solid var(--sep);
-  -webkit-backdrop-filter:saturate(180%) blur(22px); backdrop-filter:saturate(180%) blur(22px);
+  padding:0 16px; height:44px;
+  background:var(--sb); color:var(--sb-strong);
+  border-bottom:1px solid var(--sb-sep);
 }
-.mark{width:32px;height:32px;flex:none;display:block}
-.navTitle{display:flex;flex-direction:column;line-height:1.15;min-width:0}
-.navTitle b{font-size:16px;font-weight:600;letter-spacing:-.015em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.navTitle span{font-size:12px;color:var(--label2)}
+.mark{width:24px;height:24px;flex:none;display:block;border-radius:5px}
+/* The workspace name belongs to the rail's header. The nav only carries it
+   when the rail is hidden, so the two never say the same thing twice. */
+.navTitle{display:none;flex-direction:column;line-height:1.15;min-width:0}
+body.rail-off .navTitle{display:flex}
+.navTitle b{font-size:14px;font-weight:700;letter-spacing:-.005em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.navTitle span{font-size:11.5px;color:var(--sb-dim)}
 .navSpace{flex:1}
 .iconBtn{
-  width:36px;height:36px;border-radius:50%;display:grid;place-items:center;flex:none;
-  background:var(--card); box-shadow:var(--shadow); color:var(--accent);
-  transition:transform .35s var(--spring), background .2s;
+  width:32px;height:32px;border-radius:6px;display:grid;place-items:center;flex:none;
+  background:none; color:var(--sb-txt);
+  transition:background .12s ease, color .12s ease;
 }
-.iconBtn:active{transform:scale(.9)}
-.iconBtn svg{width:19px;height:19px}
+.iconBtn:hover{background:var(--sb-hover);color:var(--sb-strong)}
+.iconBtn:active{background:rgba(255,255,255,.12)}
+.iconBtn svg{width:18px;height:18px}
 #cog svg{transition:transform .7s var(--spring)}
 #cog:hover svg{transform:rotate(60deg)}
 .seg.paneSwitch{display:none;flex:none}
 .paneSwitch button{min-width:64px}
+.nav .connDot{margin-right:2px}
 
 /* ---------- rail + chart ---------- */
 /* Desktop: the rail is a vertical outline of the org — a horizontal tree can
@@ -100,124 +114,164 @@ input,textarea{font-family:inherit}
 .head{padding:16px 16px 0;text-align:left;flex:none}
 .head h1{margin:0;font-size:11px;line-height:1.3;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--label3)}
 .head p{display:none;margin:7px auto 0;max-width:46ch;font-size:14px;color:var(--label2);line-height:1.45}
-/* ---------- side menu ---------- */
-.sideTop{padding:12px 14px 4px;flex:none}
-.newChat{
-  display:flex;align-items:center;justify-content:center;gap:7px;width:100%;
-  padding:10px 14px;border-radius:12px;font-size:14px;font-weight:600;letter-spacing:-.01em;
-  color:#fff;background:var(--accent);
-  transition:transform .3s var(--spring),filter .2s;
+/* ---------- side menu ----------
+   The rail is one dark column: a workspace header, one search field, and
+   then the two lists that matter — the conversations you have had and the
+   people you can have one with. Both are open at once and either collapses,
+   so picking somebody is never a mode you have to switch into first. */
+.wsHead{
+  display:flex;align-items:center;gap:8px;flex:none;
+  padding:12px 8px 12px 16px;border-bottom:1px solid var(--sb-sep);
 }
-.newChat svg{width:15px;height:15px}
-.newChat:hover{filter:brightness(1.06)}
-.newChat:active{transform:scale(.97)}
-.sideTabs{padding:10px 14px 2px;flex:none}
-.sideTabs .seg{width:100%}
-.sideTabs .seg button{flex:1;padding:6px 8px}
-.sideSearch{margin:10px 14px 4px}
-.sideSearch input{font-size:14px}
-.sidePane{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:4px 0 26px;scrollbar-width:thin}
+.wsName{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.2;text-align:left}
+.wsName b{
+  font-size:15px;font-weight:900;letter-spacing:-.01em;color:var(--sb-strong);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.wsName span{
+  font-size:11.5px;color:var(--sb-dim);margin-top:1px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.wsCompose{
+  width:32px;height:32px;border-radius:50%;flex:none;display:grid;place-items:center;
+  background:#FFFFFF;color:var(--sb);
+  transition:transform .18s var(--spring), box-shadow .18s ease;
+}
+.wsCompose svg{width:16px;height:16px}
+.wsCompose:hover{box-shadow:0 0 0 4px var(--sb-hover)}
+.wsCompose:active{transform:scale(.92)}
+/* Scoped under .side on purpose: the plain .search block further down the
+   sheet is a later rule of equal weight, and would otherwise win the margin
+   and the type size back for the picker's version of this field. */
+.side .sideSearch{
+  margin:10px 12px;padding:6px 10px;border-radius:6px;flex:none;
+  background:var(--sb-hover);border:1px solid var(--sb-sep);
+}
+.side .sideSearch svg{color:var(--sb-dim);width:15px;height:15px}
+.side .sideSearch input{font-size:13.5px;color:var(--sb-strong)}
+.side .sideSearch input::placeholder{color:var(--sb-dim)}
+/* one scroller for both sections */
+.sideScroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding-bottom:24px;scrollbar-width:thin}
+.sideScroll::-webkit-scrollbar{width:8px}
+.sideScroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:4px}
+.sideSect{padding-top:6px}
+.sectHead{display:flex;align-items:center;gap:2px;padding:0 8px 0 8px}
+.sectDisc{
+  flex:1;min-width:0;display:flex;align-items:center;gap:4px;
+  padding:5px 8px;border-radius:6px;text-align:left;
+  font-size:13px;font-weight:700;letter-spacing:.005em;color:var(--sb-dim);
+}
+.sectDisc:hover{background:var(--sb-hover);color:var(--sb-txt)}
+.sectDisc .disc{width:12px;height:12px;flex:none;transition:transform .18s ease}
+.sideSect.closed .sectDisc .disc{transform:rotate(-90deg)}
+.sideSect.closed .sidePane,.sideSect.closed .sideAdd{display:none}
+.sectAct{
+  width:26px;height:26px;border-radius:6px;flex:none;display:grid;place-items:center;
+  color:var(--sb-dim);
+}
+.sectAct svg{width:15px;height:15px}
+.sectAct:hover{background:var(--sb-hover);color:var(--sb-strong)}
+.sidePane{padding:1px 0 2px}
 .sidePane[hidden]{display:none}
+/* "+ New chat", the way a rail offers to add something */
+.sideAdd{
+  display:flex;align-items:center;gap:9px;width:100%;
+  padding:6px 16px;font-size:13.5px;color:var(--sb-dim);text-align:left;
+}
+.sideAdd:hover{background:var(--sb-hover);color:var(--sb-strong)}
+.sideAdd .plus{
+  width:20px;height:20px;border-radius:4px;flex:none;display:grid;place-items:center;
+  background:var(--sb-hover);font-size:14px;line-height:1;
+}
 .cLabel{
-  padding:14px 16px 6px;font-size:10.5px;font-weight:700;letter-spacing:.09em;
-  text-transform:uppercase;color:var(--label3);
+  padding:9px 16px 3px;font-size:10.5px;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:rgba(255,255,255,.42);
 }
 .cRow{
-  position:relative;display:flex;align-items:center;gap:9px;width:100%;
-  padding:9px 10px 9px 16px;text-align:left;transition:background .15s;
+  position:relative;display:flex;align-items:center;gap:8px;width:100%;
+  padding:5px 8px 5px 16px;text-align:left;color:var(--sb-txt);
+  transition:background .1s ease;
 }
-.cRow:hover{background:color-mix(in srgb,var(--label) 5%,transparent)}
-.cRow.on{background:color-mix(in srgb,var(--tint) 11%,transparent)}
-.cRow.on::before{
-  content:"";position:absolute;left:0;top:5px;bottom:5px;width:3px;
-  border-radius:0 2px 2px 0;background:var(--tint);
-}
+.cRow:hover{background:var(--sb-hover)}
+.cRow.on{background:var(--accent);color:#fff}
 /* the cast, stacked — a conversation that changed hands says so at a glance */
 .cFaces{display:flex;flex:none;align-items:center}
-.cFaces .avatar{width:26px;height:26px;display:block;border-radius:50%}
-.cFaces .avatar + .avatar{margin-left:-9px;box-shadow:0 0 0 2px var(--card)}
-.cRow.on .cFaces .avatar + .avatar{box-shadow:0 0 0 2px color-mix(in srgb,var(--tint) 11%,var(--card))}
+.cFaces .avatar{width:20px;height:20px;display:block;border-radius:4px}
+.cFaces .avatar + .avatar{margin-left:-7px;box-shadow:0 0 0 1.5px var(--sb)}
+.cRow.on .cFaces .avatar + .avatar{box-shadow:0 0 0 1.5px var(--accent)}
 .cMore{
-  width:26px;height:26px;margin-left:-9px;border-radius:50%;flex:none;display:grid;place-items:center;
-  background:var(--field);color:var(--label2);font-size:9.5px;font-weight:700;
-  box-shadow:0 0 0 2px var(--card);
+  width:20px;height:20px;margin-left:-7px;border-radius:4px;flex:none;display:grid;place-items:center;
+  background:rgba(255,255,255,.2);color:#fff;font-size:8.5px;font-weight:700;
+  box-shadow:0 0 0 1.5px var(--sb);
 }
 .cText{flex:1;min-width:0}
 .cTitle{
-  display:block;font-size:13.5px;font-weight:500;letter-spacing:-.01em;
+  display:block;font-size:13.5px;font-weight:400;letter-spacing:0;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.cRow.on .cTitle{font-weight:600}
+.cRow.on .cTitle{font-weight:700}
+/* The second line is detail, not identity: it stays out of the way until the
+   row is the one you are in or the one you are pointing at. */
 .cMeta{
-  display:block;font-size:11px;color:var(--label3);margin-top:1px;
+  display:block;font-size:11px;color:rgba(255,255,255,.42);margin-top:0;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.cMeta mark{background:color-mix(in srgb,var(--accent) 26%,transparent);color:inherit;border-radius:3px}
+.cRow:hover .cMeta{color:rgba(255,255,255,.6)}
+.cRow.on .cMeta{color:rgba(255,255,255,.8)}
+.cMeta mark{background:rgba(255,255,255,.28);color:#fff;border-radius:3px}
 .cSpin{
   width:12px;height:12px;flex:none;border-radius:50%;
-  border:2px solid var(--field);border-top-color:var(--accent);animation:spin .8s linear infinite;
+  border:2px solid rgba(255,255,255,.2);border-top-color:#fff;animation:spin .8s linear infinite;
 }
 /* Rename and delete live on the row, revealed on hover or keyboard focus, so
    the list stays quiet until you reach for them. */
-.cActs{display:flex;gap:2px;flex:none;opacity:0;transition:opacity .15s}
+.cActs{display:flex;gap:1px;flex:none;opacity:0;transition:opacity .12s;padding-right:6px}
 .cRowWrap{position:relative;display:flex;align-items:center}
 .cRowWrap:hover .cActs,.cRowWrap:focus-within .cActs{opacity:1}
 .cActs button{
-  width:26px;height:26px;border-radius:8px;display:grid;place-items:center;color:var(--label2);
+  width:24px;height:24px;border-radius:5px;display:grid;place-items:center;color:var(--sb-dim);
 }
-.cActs button:hover{background:var(--field);color:var(--label)}
-.cActs button.danger:hover{background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger)}
-.cActs svg{width:14px;height:14px}
+.cActs button:hover{background:rgba(255,255,255,.14);color:#fff}
+.cActs button.danger:hover{background:var(--danger);color:#fff}
+.cActs svg{width:13px;height:13px}
 .cConfirm{
-  display:flex;align-items:center;gap:8px;padding:8px 14px 8px 16px;
-  font-size:12px;color:var(--label2);background:color-mix(in srgb,var(--danger) 8%,transparent);
+  display:flex;align-items:center;gap:8px;padding:8px 12px 8px 16px;
+  font-size:12px;color:#fff;background:color-mix(in srgb,var(--danger) 42%,var(--sb));
 }
 .cConfirm b{flex:1;min-width:0;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cConfirm button{font-size:12px;font-weight:600;padding:4px 9px;border-radius:8px;background:var(--field)}
-.cConfirm button.danger{background:var(--danger);color:#fff}
-.cEdit{display:flex;align-items:center;gap:8px;padding:7px 14px 7px 16px}
+.cConfirm button{font-size:12px;font-weight:700;padding:4px 9px;border-radius:5px;background:rgba(255,255,255,.18);color:#fff}
+.cConfirm button.danger{background:#fff;color:var(--danger)}
+.cEdit{display:flex;align-items:center;gap:8px;padding:5px 12px 5px 16px}
 .cEdit input{
-  flex:1;min-width:0;border:0;background:var(--field);border-radius:9px;padding:7px 10px;
-  font:inherit;font-size:13.5px;color:var(--label);
+  flex:1;min-width:0;border:1px solid var(--sb-sep);background:rgba(255,255,255,.1);border-radius:5px;padding:6px 9px;
+  font:inherit;font-size:13.5px;color:#fff;
 }
-.cEdit input:focus{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent)}
-.sideNote{padding:22px 20px;font-size:12.5px;color:var(--label3);line-height:1.55;text-align:center}
-.sideNote b{display:block;color:var(--label2);font-weight:600;margin-bottom:3px}
-.sideFoot{padding:14px 20px 4px;font-size:11px;color:var(--label3);line-height:1.5;text-align:center}
-.railBar{display:flex;align-items:center;padding:10px 16px 12px;border-bottom:.5px solid var(--sep);flex:none}
-.viewChart{
-  display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;
-  color:var(--accent);background:var(--field);padding:6px 12px;border-radius:999px;
-  transition:transform .3s var(--spring),filter .2s;
-}
-.viewChart:hover{filter:brightness(.96)}
-.viewChart:active{transform:scale(.95)}
-.viewChart svg{width:13px;height:13px}
-.outline{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:2px 0 26px;scrollbar-width:thin}
+.cEdit input:focus{outline:2px solid rgba(255,255,255,.5);outline-offset:0}
+.sideNote{padding:14px 18px;font-size:12.5px;color:var(--sb-dim);line-height:1.5}
+.sideNote b{display:block;color:var(--sb-strong);font-weight:700;margin-bottom:3px}
+.sideFoot{padding:8px 18px 2px;font-size:11px;color:rgba(255,255,255,.38);line-height:1.45}
+.railBar{display:none}
+.outline{padding:1px 0 2px}
 .oLabel{
-  padding:18px 16px 7px;font-size:10.5px;font-weight:700;letter-spacing:.09em;
-  text-transform:uppercase;color:var(--tint);
+  padding:9px 16px 3px;font-size:10.5px;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:rgba(255,255,255,.42);
 }
 .oRow{
-  position:relative;display:flex;align-items:center;gap:10px;width:100%;
-  padding:8px 14px 8px 16px;text-align:left;transition:background .15s;
+  position:relative;display:flex;align-items:center;gap:8px;width:100%;
+  padding:5px 8px 5px 16px;text-align:left;color:var(--sb-txt);transition:background .1s ease;
 }
-.oRow:hover{background:color-mix(in srgb,var(--label) 5%,transparent)}
-.oRow.sub{padding-left:32px}
-.oRow .avatar{width:28px;height:28px;flex:none}
+.oRow:hover{background:var(--sb-hover)}
+.oRow.sub{padding-left:30px}
+.oRow .avatar{width:20px;height:20px;flex:none;border-radius:4px}
 .oTitle{
-  flex:1;min-width:0;font-size:13.5px;font-weight:500;letter-spacing:-.01em;
+  flex:1;min-width:0;font-size:13.5px;font-weight:400;letter-spacing:0;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.oRow.is-selected{background:color-mix(in srgb,var(--tint) 10%,transparent)}
-.oRow.is-selected::before{
-  content:"";position:absolute;left:0;top:5px;bottom:5px;width:3px;
-  border-radius:0 2px 2px 0;background:var(--tint);
-}
-.oRow.is-selected .oTitle{font-weight:600}
+.oRow.is-selected{background:var(--accent);color:#fff}
+.oRow.is-selected .oTitle{font-weight:700}
 .oBadge{
-  min-width:19px;height:19px;padding:0 5px;border-radius:10px;flex:none;
-  background:var(--tint);color:#fff;font-size:10.5px;font-weight:700;
+  min-width:18px;height:18px;padding:0 5px;border-radius:9px;flex:none;
+  background:var(--danger);color:#fff;font-size:10.5px;font-weight:700;
   display:grid;place-items:center;
 }
 /* The tree and its zoom control travel together: hidden here on desktop,
@@ -320,40 +374,72 @@ body.no-motion .avatar .mark,body.no-motion .avatar .wave rect,body.no-motion .a
   background:var(--card);
   display:flex;flex-direction:column;min-height:0;overflow:hidden;
 }
-/* The pane fills the window; the conversation sits in a centered column so a
-   wide screen doesn't stretch the thread. Uncapped on mobile. */
+/* The conversation fills the pane, the way a channel does. A capped, centred
+   column made a wide window into a narrow document with two empty margins. */
 .paneCol{
   flex:1;min-height:0;display:flex;flex-direction:column;
-  width:100%;max-width:720px;margin-inline:auto;
+  width:100%;
 }
-/* The header row holds two separate controls — the role switcher is itself a
-   button, so the speaker toggle must be a flex sibling, never a child. */
+/* The header row holds separate controls — the role switcher is itself a
+   button, so the facepile and the speaker toggle must be flex siblings,
+   never children. */
 .cardHead{
-  display:flex;align-items:center;flex:none;
-  border-bottom:.5px solid var(--sep);
-  background:linear-gradient(180deg, color-mix(in srgb, var(--tint) 12%, var(--card)), var(--card));
+  display:flex;align-items:center;gap:8px;flex:none;min-height:49px;
+  padding-right:16px;
+  border-bottom:1px solid var(--sep);background:var(--card);
 }
+/* The name button is only as wide as the name — margin-right:auto is what
+   pushes the members and the tools to the far edge, so hovering the title
+   doesn't light up half the header. */
 .cardTop{
-  padding:20px 20px 16px;display:flex;gap:14px;align-items:center;flex:1;min-width:0;
+  padding:6px 8px 6px 12px;margin:0 auto 0 8px;display:flex;gap:6px;align-items:center;
+  flex:0 1 auto;min-width:0;border-radius:6px;
 }
-.cardTop .avatar{width:44px;height:44px;flex:none}
+.cardTop:hover{background:var(--hover)}
+.cardTop .avatar{width:26px;height:26px;flex:none;border-radius:5px}
 .cardTop .meta{min-width:0;flex:1}
-.cardTop .eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--tint)}
-.cardTop .titleTxt{margin:3px 0 0;font-size:20px;font-weight:700;letter-spacing:-.02em;line-height:1.2}
-.cardTop{text-align:left;border:0;font:inherit;cursor:pointer;transition:filter .2s}
-.cardTop:active{filter:brightness(.96)}
-.headBtns{display:flex;align-items:center;gap:8px;flex:none;margin-right:20px}
+/* Members, as faces, with the count — and the way to add one. */
+.facepile{
+  display:flex;align-items:center;gap:0;flex:none;
+  padding:2px 8px 2px 3px;border-radius:6px;border:1px solid var(--sep);
+  transition:background .12s ease;
+}
+.facepile[hidden]{display:none}
+.facepile:hover{background:var(--hover)}
+.facepile .avatar{width:24px;height:24px;display:block;border-radius:5px}
+.facepile .avatar + .avatar{margin-left:-6px;box-shadow:0 0 0 1.5px var(--card)}
+.faceN{font-size:12.5px;font-weight:600;color:var(--label2);margin-left:7px}
+.headAdd{
+  width:32px;height:32px;border-radius:6px;flex:none;display:grid;place-items:center;
+  color:var(--label2);transition:background .12s ease,color .12s ease;
+}
+.headAdd svg{width:18px;height:18px}
+.headAdd:hover{background:var(--hover);color:var(--label)}
+/* The name leads and the team follows it on the same line, the way a channel
+   header names the channel and then its topic. The markup keeps the eyebrow
+   first — it is the department, and the role editor reads it there — so the
+   reversal is done in the layout with `order`. */
+.cardTop .meta{display:flex;align-items:baseline;gap:9px;flex:0 1 auto;min-width:0}
+.cardTop .titleTxt{
+  order:1;margin:0;font-size:16px;font-weight:900;letter-spacing:-.01em;line-height:1.25;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0;
+}
+.cardTop .eyebrow{
+  order:2;font-size:12.5px;font-weight:400;letter-spacing:0;text-transform:none;color:var(--label2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none;
+}
+.cardTop{text-align:left;border:0;font:inherit;cursor:pointer}
+.headBtns{display:flex;align-items:center;gap:2px;flex:none}
 .speak{
-  width:34px;height:34px;border-radius:50%;background:var(--field);color:var(--label2);
+  width:32px;height:32px;border-radius:6px;background:none;color:var(--label2);
   display:grid;place-items:center;flex:none;
-  transition:transform .3s var(--spring),background .25s ease,color .25s ease;
+  transition:background .12s ease,color .12s ease;
 }
 .speak[hidden]{display:none}
 .speak svg{width:18px;height:18px}
-.speak:active{transform:scale(.86)}
+.speak:hover{background:var(--hover);color:var(--label)}
 .speak.on{background:var(--accent);color:#fff}
-.pickChev{width:13px;height:8px;flex:none;color:var(--label3);transition:transform .35s var(--spring)}
-.cardTop:active .pickChev{transform:translateY(2px)}
+.pickChev{width:11px;height:7px;flex:none;color:var(--label3)}
 .close{
   width:28px;height:28px;border-radius:50%;background:var(--field);color:var(--label2);
   display:grid;place-items:center;flex:none;font-size:15px;line-height:1;transition:transform .3s var(--spring)
@@ -561,29 +647,38 @@ body.dark .pill.ok{color:#5FD97C}
 
 /* ---------- connection / boot ---------- */
 .connDot{
-  width:9px;height:9px;border-radius:50%;background:#8E8E93;flex:none;
-  transition:background .3s ease, box-shadow .3s ease;
+  width:8px;height:8px;border-radius:50%;background:transparent;flex:none;
+  border:1.6px solid var(--sb-dim);
+  transition:background .3s ease, border-color .3s ease, box-shadow .3s ease;
 }
-.connDot.on{background:#34C759;box-shadow:0 0 0 3px color-mix(in srgb,#34C759 20%,transparent)}
+.connDot.on{background:#2BAC76;border-color:#2BAC76;box-shadow:0 0 0 3px rgba(43,172,118,.22)}
 .appBanner[hidden]{display:none}
-/* Desktop: a quiet one-line status note under the nav, left-aligned to the
-   messenger's content column — not a full-bleed strip. Mobile restores the
-   original strip. */
-.appBanner{flex:none;font-size:12.5px;line-height:1.45;color:var(--label2)}
-.bannerShell{max-width:1560px;margin-inline:auto}
+/* A status strip across the top of the conversation, indented past the rail
+   so it starts where the conversation does. */
+.appBanner{
+  flex:none;font-size:13px;line-height:1.45;color:var(--label2);
+  background:color-mix(in srgb,var(--accent) 7%,var(--card));
+  border-bottom:1px solid var(--sep);
+}
+.bannerShell{max-width:none}
 .bannerRow{
-  display:flex;align-items:flex-start;gap:8px;
-  padding:8px 20px 6px calc(var(--railW) + max(0px,(100% - var(--railW) - 720px)/2) + 16px);
+  display:flex;align-items:center;gap:9px;
+  padding:8px 20px 8px calc(var(--railW) + 20px);
 }
-.bDot{width:6px;height:6px;border-radius:50%;background:var(--label3);flex:none;margin-top:6px}
-.appBanner .txt{min-width:0}
-.appBanner .txt b{color:var(--label);font-weight:600}
+body.rail-off .bannerRow{padding-left:20px}
+.bDot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none}
+.appBanner .txt{min-width:0;flex:1}
+.appBanner .txt b{color:var(--label);font-weight:700}
+.appBanner .txt code{
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
+  background:var(--field);padding:1.5px 5px;border-radius:4px;
+}
 .appBanner .x{
-  width:18px;height:18px;border-radius:50%;background:var(--field);color:var(--label2);
-  font-size:10px;line-height:1;display:grid;place-items:center;flex:none;align-self:center;
-  transition:transform .3s var(--spring);
+  width:22px;height:22px;border-radius:5px;background:none;color:var(--label2);
+  font-size:11px;line-height:1;display:grid;place-items:center;flex:none;align-self:center;
+  transition:background .12s ease;
 }
-.appBanner .x:active{transform:scale(.86)}
+.appBanner .x:hover{background:var(--hover);color:var(--label)}
 .bootVeil{
   position:fixed;inset:0;z-index:90;display:flex;flex-direction:column;gap:14px;
   align-items:center;justify-content:center;background:var(--wash);
@@ -598,30 +693,80 @@ body.dark .pill.ok{color:#5FD97C}
 @keyframes spin{to{transform:rotate(360deg)}}
 body.no-motion .spinner{animation-duration:1.6s}
 
-/* ---------- messenger ---------- */
-.tabs{padding:10px 16px;border-bottom:.5px solid var(--sep);background:var(--card);flex:none}
-.tabs .seg{width:100%}
-.tabs .seg button{flex:1}
+/* ---------- messenger ----------
+   Messages / Brief read as the channel's tabs, underlined, sitting on the
+   header's rule — not as a full-width switch competing with it. */
+.tabs{padding:0 20px;border-bottom:1px solid var(--sep);background:var(--card);flex:none}
+.tabs .seg{width:auto;background:none;border-radius:0;padding:0;gap:2px}
+.tabs .seg .thumb{display:none}
+.tabs .seg button{
+  flex:none;padding:9px 12px 7px;font-size:13.5px;font-weight:700;color:var(--label2);
+  border-bottom:2px solid transparent;border-radius:0;
+}
+.tabs .seg button:hover{color:var(--label)}
+.tabs .seg button[aria-pressed="true"]{color:var(--label);border-bottom-color:var(--label)}
 .chat{display:none;flex:1 1 auto;min-height:0;flex-direction:column}
 .card.chatting .cardBody,.card.chatting #footBrief{display:none}
 .card.chatting .chat{display:flex}
 .thread{
   flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
-  padding:8px 16px 12px;display:flex;flex-direction:column;gap:8px;
+  padding:16px 0 18px;display:flex;flex-direction:column;
 }
-.stamp{align-self:center;font-size:11px;color:var(--label3);padding:2px 0 8px}
-.clearBar{align-self:center;padding-bottom:4px}
-.clearBar button{font-size:12px;color:var(--label3);padding:4px 8px;border-radius:8px}
-.clearBar button:active{background:var(--field)}
-.msg{display:flex;animation:pop .42s var(--spring) both}
-.msg.me{justify-content:flex-end}
+/* the date divider, as a rule with the day sitting on it */
+.stamp{
+  position:relative;display:flex;justify-content:center;margin:10px 16px 14px;flex:none;
+}
+.stamp::before{content:"";position:absolute;left:0;right:0;top:50%;border-top:1px solid var(--sep)}
+.stamp span{
+  position:relative;background:var(--card);border:1px solid var(--sep);border-radius:999px;
+  padding:2px 14px;font-size:12.5px;font-weight:700;color:var(--label2);
+}
+.clearBar{align-self:center;padding-bottom:10px}
+.clearBar button{font-size:12.5px;color:var(--accent);padding:4px 10px;border-radius:6px;font-weight:600}
+.clearBar button:hover{background:var(--hover);text-decoration:underline}
+
+/* =================================================================
+   ONE MESSAGE IS ONE ROW
+
+   Not two columns of opposing bubbles: an avatar, a name, a time,
+   and then the words running the full width of the column. It is
+   what lets a persona's answer hold a table or a code block without
+   fighting a 68%-wide balloon for room, and what makes a transcript
+   with four people in it readable as a transcript.
+================================================================= */
+.msg{
+  display:flex;gap:8px;align-items:flex-start;
+  padding:6px 20px;position:relative;
+}
+.msg:hover{background:var(--hover)}
+.msg.cont{padding-top:2px;padding-bottom:2px}
+.who{flex:none;width:36px;position:relative}
+.who .avatar{width:36px;height:36px;display:block;border-radius:8px}
+/* A continued message keeps the column but drops the face; its time appears
+   in that gap on hover, so the run stays quiet and stays checkable. */
+.msg.cont .who .avatar{display:none}
+.hoverTime{
+  display:none;font-size:10.5px;color:var(--label3);line-height:20px;
+  text-align:right;width:100%;padding-right:2px;
+}
+.msg.cont:hover .hoverTime{display:block}
+.said{flex:1;min-width:0;display:flex;flex-direction:column}
+.mHead{display:flex;align-items:baseline;gap:8px;margin-bottom:1px}
+.msg.cont .mHead{display:none}
+.whoName{font-size:15px;font-weight:900;letter-spacing:-.01em;color:var(--label)}
+.mTime{font-size:12px;color:var(--label3)}
 .bubble{
-  max-width:min(68%,560px);padding:9px 14px;border-radius:20px;font-size:15px;line-height:1.44;
-  letter-spacing:-.008em;white-space:pre-wrap;overflow-wrap:anywhere;
+  max-width:100%;padding:0;border-radius:0;background:none;
+  font-size:15px;line-height:1.46;letter-spacing:0;
+  white-space:pre-wrap;overflow-wrap:anywhere;color:var(--label);
 }
-.msg.from .bubble{background:var(--field);border-bottom-left-radius:7px}
-.msg.me .bubble{background:var(--accent);color:#fff;border-bottom-right-radius:7px}
-.msg.err .bubble{background:color-mix(in srgb,var(--danger) 13%,transparent);color:var(--danger)}
+.msg.err .bubble{
+  color:var(--danger);background:color-mix(in srgb,var(--danger) 8%,transparent);
+  border-left:3px solid var(--danger);border-radius:0 6px 6px 0;padding:8px 12px;
+}
+/* the typing indicator is a row like any other, so nothing jumps when the
+   answer lands in its place */
+.msg.typing{padding-top:6px}
 @keyframes pop{from{opacity:0;transform:translateY(12px) scale(.94)}to{opacity:1;transform:none}}
 
 /* ---------- answers, as sections ----------
@@ -630,11 +775,10 @@ body.no-motion .spinner{animation-duration:1.6s}
    the moment it holds real blocks, and anything that cannot wrap — a table, a
    code block — scrolls inside its own box so the thread never does. */
 .bubble.rich{white-space:normal}
-.bubble.wide{max-width:min(86%,720px)}
-/* a tagged reply is boxed by .said, not by the bubble, so the room a sectioned
-   answer needs has to be given there. Browsers without :has() keep the
-   narrower column — legible, just tighter. */
-.msg.tagged:has(.bubble.wide) .said{max-width:min(86%,720px)}
+/* A sectioned answer wants a reading measure rather than the whole of a wide
+   window; a plain reply is fine running longer. Both are capped rather than
+   centred, so every row still starts on the same left edge as its avatar. */
+.bubble.wide{max-width:min(100%,860px)}
 .ans{display:flex;flex-direction:column;gap:11px}
 .ans > .sect{display:flex;flex-direction:column;gap:5px}
 .ans > .sect + .sect{border-top:.5px solid var(--sep);padding-top:11px}
@@ -679,7 +823,7 @@ body.no-motion .spinner{animation-duration:1.6s}
   padding:5px 11px;border-radius:9px;background:color-mix(in srgb,var(--tint,#8E8E93) 12%,transparent);
 }
 .msg.err .bubble a,.msg.me .bubble a{color:inherit;text-decoration:underline}
-.dots{display:flex;gap:5px;padding:14px 16px;background:var(--field);border-radius:20px;border-bottom-left-radius:7px}
+.dots{display:flex;gap:5px;padding:10px 0 4px}
 .dots i{width:7px;height:7px;border-radius:50%;background:var(--label3);animation:dot 1.3s infinite}
 .dots i:nth-child(2){animation-delay:.16s}
 .dots i:nth-child(3){animation-delay:.32s}
@@ -687,37 +831,49 @@ body.no-motion .spinner{animation-duration:1.6s}
 /* Desktop: the empty state doesn't float in the vertical center of a tall
    pane — it anchors above the composer, in the lower reach of the thread.
    Mobile restores the centered version. */
-.empty{margin:auto auto clamp(20px,6vh,56px);width:100%;max-width:440px;text-align:center;padding:10px 4px}
-.empty .avatar{width:78px;height:78px;margin:0 auto 10px}
-.empty h4{margin:0 0 6px;font-size:17px;font-weight:600;letter-spacing:-.015em}
-.empty p{margin:0 auto 16px;font-size:13.5px;color:var(--label2);line-height:1.45;max-width:30ch}
-.starters{display:flex;flex-direction:column;gap:8px;text-align:left}
+/* The start of a channel: who this is, said once, at the top of the column
+   where the first message will land — not floating in the middle of an
+   empty pane. */
+.empty{margin:0 0 auto;width:100%;max-width:640px;text-align:left;padding:10px 20px 20px}
+.empty .avatar{width:64px;height:64px;margin:0 0 12px;border-radius:14px}
+.empty h4{margin:0 0 6px;font-size:24px;font-weight:900;letter-spacing:-.02em}
+.empty p{margin:0 0 18px;font-size:14px;color:var(--label2);line-height:1.5;max-width:56ch}
+.starters{display:flex;flex-direction:column;gap:6px;text-align:left}
 .starter{
-  padding:11px 14px;border-radius:15px;background:var(--field);font-size:14px;
-  color:var(--label);transition:transform .3s var(--spring);
+  padding:9px 13px;border-radius:6px;border:1px solid var(--sep);background:none;
+  font-size:14px;color:var(--label);transition:background .12s ease,border-color .12s ease;
 }
-.starter:active{transform:scale(.97)}
+.starter:hover{background:var(--hover);border-color:var(--line)}
+/* The composer is one bordered box that owns its buttons, rather than a pill
+   with two circles floating beside it. The border is the whole affordance:
+   it says "this is where you write", it grows with the text, and it lights
+   up on focus instead of the field inside it. */
 .composer{
-  display:none;gap:10px;align-items:flex-end;flex:none;position:relative;
-  padding:10px 14px calc(12px + env(safe-area-inset-bottom,0px));border-top:.5px solid var(--sep);
+  display:none;gap:6px;align-items:flex-end;flex:none;position:relative;
+  margin:6px 20px calc(18px + env(safe-area-inset-bottom,0px));
+  padding:6px 6px 6px 0;
+  border:1px solid var(--line);border-radius:8px;background:var(--card);
+  transition:border-color .12s ease, box-shadow .12s ease;
 }
+.composer:focus-within{border-color:var(--label3);box-shadow:0 0 0 1px var(--label3)}
 .card.chatting .composer{display:flex}
 .composerBox{flex:1;min-width:0;position:relative}
 .composer textarea{
-  width:100%;display:block;border:0;background:var(--field);border-radius:20px;padding:10px 14px;
-  font-size:15px;line-height:1.4;color:var(--label);resize:none;height:41px;max-height:124px;
+  width:100%;display:block;border:0;background:none;border-radius:0;padding:8px 12px;
+  font-size:15px;line-height:1.4;color:var(--label);resize:none;height:37px;max-height:180px;
 }
-.composer textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent)}
+.composer textarea:focus{outline:none}
+.composer textarea::placeholder{color:var(--label3)}
 /* mirror of the textarea: committed text transparent, interim words lighter.
    Named dictGhost — a plain .ghost class collides with the .wideBtn.ghost
    button variant and stretches that button over the whole card. */
 .dictGhost{
-  position:absolute;inset:0;border-radius:20px;padding:10px 14px;
+  position:absolute;inset:0;border-radius:0;padding:8px 12px;
   font-size:15px;line-height:1.4;white-space:pre-wrap;overflow-wrap:break-word;
   overflow:hidden;pointer-events:none;color:transparent;
 }
 .dictGhost[hidden]{display:none}
-.dictGhost .int{color:var(--label3);background:var(--field);border-radius:3px}
+.dictGhost .int{color:var(--label3);background:var(--card);border-radius:3px}
 /* low-confidence commits: glyphs stay transparent (the textarea shows them) —
    only the dotted underline paints, so the flag never doubles the text */
 .dictGhost .lowc{
@@ -725,14 +881,14 @@ body.no-motion .spinner{animation-duration:1.6s}
   text-decoration-thickness:1.5px;text-underline-offset:3px;
 }
 .mic{
-  width:34px;height:34px;border-radius:50%;background:var(--field);color:var(--label2);
-  display:grid;place-items:center;flex:none;margin-bottom:4px;position:relative;
-  transition:transform .3s var(--spring),background .25s ease,color .25s ease;
+  width:30px;height:30px;border-radius:6px;background:none;color:var(--label2);
+  display:grid;place-items:center;flex:none;margin-bottom:2px;position:relative;
+  transition:background .12s ease,color .12s ease;
 }
 .mic[hidden]{display:none}
 .mic svg{width:17px;height:17px}
 .mic:disabled{opacity:.32;cursor:default}
-.mic:not(:disabled):active{transform:scale(.86)}
+.mic:not(:disabled):hover{background:var(--hover);color:var(--label)}
 .mic.listening{background:var(--accent);color:#fff}
 .mic.listening::after{
   content:"";position:absolute;inset:-3px;border-radius:50%;
@@ -751,13 +907,16 @@ body.no-motion .spinner{animation-duration:1.6s}
 .micNotice.info{color:var(--label2)}
 .micNotice button{color:var(--accent);font-weight:600;font-size:12.5px;margin-left:6px}
 .vh{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+/* Slack's send: green when there is something to send, a plain grey glyph
+   when there isn't — so the button itself tells you whether Enter will do
+   anything. */
 .send{
-  width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;
-  display:grid;place-items:center;flex:none;margin-bottom:4px;
-  transition:transform .3s var(--spring),opacity .2s;
+  width:30px;height:30px;border-radius:6px;background:var(--go);color:#fff;
+  display:grid;place-items:center;flex:none;margin-bottom:2px;
+  transition:background .12s ease,color .12s ease,filter .12s ease;
 }
-.send:disabled{opacity:.32;cursor:default}
-.send:not(:disabled):active{transform:scale(.86)}
+.send:disabled{background:none;color:var(--label3);opacity:1;cursor:default}
+.send:not(:disabled):hover{filter:brightness(1.1)}
 .send svg{width:17px;height:17px}
 .badge{
   position:absolute;top:9px;right:9px;min-width:19px;height:19px;padding:0 5px;border-radius:10px;
@@ -782,52 +941,48 @@ body.no-motion .spinner{animation-duration:1.6s}
    common case — render exactly as they always have: no mark, no label. Each
    tagged row carries its own --tint inline, so the colour is the speaker's
    department, not the selected persona's. */
-.msg.tagged{align-items:flex-start;gap:9px}
-.msg.tagged .who{flex:none;margin-top:-1px}
-.msg.tagged .who .avatar{width:26px;height:26px;display:block}
-.msg.tagged .said{min-width:0;max-width:min(68%,560px);display:flex;flex-direction:column;gap:3px;align-items:flex-start}
-.msg.tagged .whoName{
-  font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
-  color:color-mix(in srgb,var(--tint) 78%,var(--label2));padding-left:4px;
-}
-body.dark .msg.tagged .whoName{color:color-mix(in srgb,var(--tint) 80%,#fff)}
-.msg.tagged .bubble{max-width:100%}
+/* Every message is tagged now, so the shape lives in .msg above and this is
+   only the colour the author's team lends its name. */
+.whoName{color:var(--label)}
+.msg.tagged[style*="--tint"] .whoName{color:var(--label)}
 /* the hand-off marker left in the thread when the assistant changes */
-.msg.handoff{justify-content:center}
+.msg.handoff{justify-content:center;padding:8px 20px}
+.msg.handoff:hover{background:none}
 .handoffPill{
   display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;
-  padding:5px 13px 5px 5px;border-radius:999px;font-size:12.5px;color:var(--label2);
-  background:color-mix(in srgb,var(--tint) 13%,var(--field));
+  padding:4px 12px 4px 4px;border-radius:999px;font-size:12.5px;color:var(--label2);
+  background:var(--field);border:1px solid var(--sep);
 }
-.handoffPill .avatar{width:22px;height:22px;flex:none;display:block}
-.handoffPill b{color:var(--label);font-weight:600}
-.handoffPill button{color:var(--accent);font-weight:600;font-size:12.5px}
+.handoffPill .avatar{width:20px;height:20px;flex:none;display:block;border-radius:4px}
+.handoffPill b{color:var(--label);font-weight:700}
+.handoffPill button{color:var(--accent);font-weight:700;font-size:12.5px}
+.handoffPill button:hover{text-decoration:underline}
 /* the cast: everyone in this conversation, one tap to hand it to any of them */
-.castBar{display:none;align-items:center;gap:8px;flex:none;padding:9px 14px 0}
+.castBar{display:none;align-items:center;gap:6px;flex:none;padding:8px 20px 0}
 .card.chatting .castBar{display:flex}
 .castRow{
-  display:flex;align-items:center;gap:6px;flex:1;min-width:0;
+  display:flex;align-items:center;gap:5px;flex:1;min-width:0;
   overflow-x:auto;scrollbar-width:none;padding-bottom:2px;
 }
 .castRow::-webkit-scrollbar{display:none}
 .castChip{
-  display:flex;align-items:center;gap:7px;flex:none;max-width:210px;
-  padding:4px 12px 4px 4px;border-radius:999px;background:var(--field);
-  font-size:13px;color:var(--label2);transition:transform .3s var(--spring);
+  display:flex;align-items:center;gap:6px;flex:none;max-width:210px;
+  padding:3px 10px 3px 3px;border-radius:6px;background:none;border:1px solid var(--sep);
+  font-size:12.5px;color:var(--label2);transition:background .12s ease;
 }
-.castChip:active{transform:scale(.96)}
-.castChip .avatar{width:22px;height:22px;flex:none;display:block}
+.castChip:hover{background:var(--hover)}
+.castChip .avatar{width:20px;height:20px;flex:none;display:block;border-radius:4px}
 .castChip .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .castChip.on{
-  color:var(--label);font-weight:600;
-  background:color-mix(in srgb,var(--tint) 15%,transparent);
-  box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--tint) 45%,transparent);
+  color:var(--label);font-weight:700;
+  background:color-mix(in srgb,var(--tint) 12%,transparent);
+  border-color:color-mix(in srgb,var(--tint) 45%,transparent);
 }
 .castAdd{
-  flex:none;padding:6px 12px;border-radius:999px;background:var(--field);
-  color:var(--accent);font-size:13px;font-weight:600;transition:transform .3s var(--spring);
+  flex:none;padding:4px 11px;border-radius:6px;background:none;border:1px solid var(--sep);
+  color:var(--accent);font-size:12.5px;font-weight:700;transition:background .12s ease;
 }
-.castAdd:active{transform:scale(.96)}
+.castAdd:hover{background:var(--hover)}
 
 /* ---------- ambient listening ---------- */
 .speak.pulse{position:relative}
@@ -999,42 +1154,50 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
   .card{width:100%;border-right:0;box-shadow:none}
   body.showing-chart .card{display:none}
   body:not(.showing-chart) .chartPane{display:none}
-  .navTitle{display:none}
+  .navTitle,body.rail-off .navTitle{display:none}
   /* The side menu slides in over the conversation rather than displacing it,
      so opening it never costs you your place in the thread. */
   .side{
-    position:fixed;top:60px;bottom:0;left:0;z-index:60;
-    width:min(86vw,340px);border-right:.5px solid var(--sep);
+    position:fixed;top:44px;bottom:0;left:0;z-index:60;
+    width:min(86vw,320px);
     transform:translateX(-101%);transition:transform .34s var(--spring);
-    box-shadow:0 0 40px rgba(0,0,0,.18);
+    box-shadow:0 0 40px rgba(0,0,0,.34);
   }
   body.menu-open .side{transform:none}
   body.rail-off .side{display:flex}
   .sheet.picker{height:82dvh}
   .sheet{
-    left:0;right:0;top:auto;bottom:0;width:auto;height:94dvh;border-radius:22px 22px 0 0;
+    left:0;right:0;top:auto;bottom:0;width:auto;height:94dvh;border-radius:14px 14px 0 0;
     transform:translateY(102%) scale(1);
   }
   .sheet.on{transform:translateY(0)}
   /* Mobile keeps the pre-rail layout: full-width panes, big heading, the tree
-     as the Chart pane, centered empty state, and the full-width banner strip. */
+     as the Chart pane, and the full-width banner strip. */
   .chartPane{flex:1;width:auto;border-right:0}
-  /* View chart is desktop-only — mobile has the Chart pane in the switch above
-     — but the outline is how you pick someone inside the drawer, so it stays. */
-  .railBar{display:none}
   .chartWrap{display:flex}
   .paneCol{max-width:none}
-  .bubble{max-width:82%}
-  .thread{padding-top:14px}
-  .empty{margin:auto 0;max-width:none}
+  /* A phone has no room for a 36px gutter beside every message: the avatar
+     shrinks, the row loses its side padding, and the run-collapsing does the
+     rest of the work. */
+  .msg{padding:5px 14px;gap:7px}
+  .who{width:30px}
+  .who .avatar{width:30px;height:30px;border-radius:7px}
+  .whoName{font-size:14.5px}
+  .thread{padding-top:12px}
+  .composer{margin:6px 14px calc(12px + env(safe-area-inset-bottom,0px))}
+  .castBar{padding:8px 14px 0}
+  /* the name gets the whole bar on a phone — the department is the first
+     thing worth losing when there isn't room for both */
+  .cardTop{padding-left:8px;margin-left:6px}
+  .cardTop .eyebrow{display:none}
+  .cardHead{padding-right:6px}
+  .tabs{padding:0 14px}
+  .empty{margin:0 0 auto;max-width:none;padding:10px 14px 20px}
+  .empty h4{font-size:21px}
   .head{text-align:center;padding:26px 20px 2px}
   .head h1{font-size:27px;font-weight:700;letter-spacing:-.026em;text-transform:none;color:var(--label);line-height:1.12}
   .head p{display:block;font-size:13px}
-  .appBanner{
-    display:block;padding:9px 20px;font-size:13px;
-    background:color-mix(in srgb,var(--accent) 8%,var(--card));
-    border-bottom:.5px solid var(--sep);
-  }
+  .appBanner{display:block;padding:9px 16px;font-size:13px}
   .bannerShell{max-width:none}
   .bannerRow{display:flex;align-items:center;gap:10px;padding:0}
   .bDot{display:none}
@@ -1084,32 +1247,52 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
 
   <!-- side menu: conversation history and the team, in one column -->
   <aside class="side" id="side" aria-label="Conversations and team">
-    <div class="sideTop">
-      <button class="newChat" id="newChat">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-        New chat
-      </button>
-    </div>
-    <div class="sideTabs">
-      <div class="seg s" id="sideSwitch">
-        <span class="thumb"></span>
-        <button data-side="chats" aria-pressed="true">Chats</button>
-        <button data-side="team" aria-pressed="false">Team</button>
+    <!-- Workspace header: whose workspace this is, and the one button that
+         starts something new. Everything below it is the list. -->
+    <div class="wsHead">
+      <div class="wsName">
+        <b id="wsCompany">Northwind Cloud</b>
+        <span id="wsSub">Org chart</span>
       </div>
+      <button class="wsCompose" id="newChat" aria-label="New chat" title="New chat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 3.5a2.12 2.12 0 0 1 3 3L8 19l-4 1 1-4Z"/><path d="M14.5 6.5l3 3"/></svg>
+      </button>
     </div>
     <div class="search sideSearch" id="sideSearchRow">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
-      <input id="sideQuery" placeholder="Search conversations" autocomplete="off" aria-label="Search conversations">
+      <input id="sideQuery" placeholder="Search" autocomplete="off" aria-label="Search conversations">
     </div>
-    <div class="sidePane" id="paneChats"></div>
-    <div class="sidePane" id="paneTeam" hidden>
-      <div class="railBar">
-        <button class="viewChart" id="viewChart">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="5" rx="1.5"/><rect x="3" y="16" width="6" height="5" rx="1.5"/><rect x="15" y="16" width="6" height="5" rx="1.5"/><path d="M12 8v3M6 16v-2.5h12V16"/></svg>
-          View chart
+    <!-- One scroller, two sections. Both are open at once and either can be
+         collapsed: your conversations and the people you can start one with
+         are the same list, and hiding one behind the other made picking
+         somebody a two-step. -->
+    <div class="sideScroll" id="sideScroll">
+      <section class="sideSect" id="sectChats">
+        <div class="sectHead">
+          <button class="sectDisc" data-sect="chats" aria-expanded="true" aria-controls="paneChats">
+            <svg class="disc" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Conversations</span>
+          </button>
+        </div>
+        <div class="sidePane" id="paneChats"></div>
+        <button class="sideAdd" id="newChatRow">
+          <span class="plus" aria-hidden="true">+</span>New chat
         </button>
-      </div>
-      <nav class="outline" id="outline" aria-label="Team outline"></nav>
+      </section>
+      <section class="sideSect" id="sectTeam">
+        <div class="sectHead">
+          <button class="sectDisc" data-sect="team" aria-expanded="true" aria-controls="paneTeam">
+            <svg class="disc" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Team</span>
+          </button>
+          <button class="sectAct" id="viewChart" aria-label="View the org chart" title="View the org chart">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="5" rx="1.5"/><rect x="3" y="16" width="6" height="5" rx="1.5"/><rect x="15" y="16" width="6" height="5" rx="1.5"/><path d="M12 8v3M6 16v-2.5h12V16"/></svg>
+          </button>
+        </div>
+        <div class="sidePane" id="paneTeam">
+          <nav class="outline" id="outline" aria-label="Team outline"></nav>
+        </div>
+      </section>
     </div>
   </aside>
 
@@ -1138,6 +1321,13 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
       <div class="titleTxt" id="cardTitle">Head of Marketing</div>
     </div>
     <svg class="pickChev" viewBox="0 0 14 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l6 6 6-6"/></svg>
+  </button>
+  <!-- Who is in this conversation, as faces, with the count — and the way to
+       add somebody. Same job the cast bar does above the composer; this is
+       the copy of it that is visible before you scroll. -->
+  <button class="facepile" id="facepile" hidden aria-label="People in this conversation"></button>
+  <button class="headAdd" id="headAdd" aria-label="Add someone to this conversation" title="Add someone to this conversation">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 20v-1.6a3.4 3.4 0 0 0-3.4-3.4H6.4A3.4 3.4 0 0 0 3 18.4V20"/><circle cx="9.25" cy="8" r="3.4"/><path d="M18.5 8.2v4.6M20.8 10.5h-4.6"/></svg>
   </button>
   <div class="headBtns">
   <button class="speak" id="ambientBtn" hidden aria-pressed="false" aria-label="Ambient listening" title="Ambient listening — answers questions it overhears">
@@ -1240,17 +1430,49 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
 
 <script>
 /* ========== data ========== */
-/* Base URL of the Apps Script web app. Safe to commit: it answers nothing
-   without the access token, which lives only in this browser (localStorage,
-   key "pa_token") and is appended to the URL at runtime.
+/* Base URL of the Apps Script web app.
 
    Every Apps Script re-deploy that creates a NEW deployment mints a new /exec
    URL, so the constant below is only the default. Settings › Chat accepts the
    full Web app URL (with or without ?token=...) pasted straight from the
    deploy dialog: the app splits it into an endpoint override (localStorage,
-   key "pa_endpoint") and the token, and targets that deployment from then on.
-   Paste once per browser — nothing needs re-entering after that. */
+   key "pa_endpoint") and the token, and targets that deployment from then on. */
 const SHEET_ENDPOINT = "https://script.google.com/macros/s/AKfycbzowjBwMMSEWcDHW7Z94Ga-57iacv8tOoirSQp4hGJBshvUnWrnn7thKwvzCvmk9_mM/exec";
+
+/* =================================================================
+   CONNECTING SHOULD NOT BE SOMETHING YOU DO
+
+   The access token is the only thing standing between this page and
+   the Sheet, and for most of this app's life it lived in exactly one
+   place: localStorage, in whichever browser had been told about it.
+   That made "connected" a property of a device rather than of the
+   app. A new laptop, a phone, a second Chrome profile, a private
+   window, a cleared site-data, Safari evicting storage after a quiet
+   week — each one silently landed you back on built-in sample data
+   with a banner asking you to go and paste something.
+
+   There are now three places a token can come from, tried in order,
+   and the app is connected if ANY of them answers:
+
+     1. localStorage       — a token pasted into Settings › Chat
+     2. the URL            — ?token=… or #token=… , adopted once and
+                              then scrubbed out of the address bar
+     3. SHEET_TOKEN below  — committed, so it is simply always there
+
+   Fill SHEET_TOKEN in and there is no first-run step left at all: any
+   browser that can open this page opens it connected. That is the
+   whole point, and it is also a real credential sitting in a file
+   anyone who can load the page can read — whoever reaches this page
+   can read and write the Sheet behind it and spend the Anthropic key
+   it proxies. Right trade for a workspace page whose URL you keep to
+   yourself; wrong one for a page you hand out. Rotating it is one
+   edit here plus APP_TOKEN in the Apps Script's Script Properties.
+
+   Leave it empty and nothing about the old behaviour changes: layers
+   1 and 2 still work, and the app still waits to be told.
+================================================================= */
+const SHEET_TOKEN = "";
+
 const TOKEN_KEY = "pa_token";
 const ENDPOINT_KEY = "pa_endpoint";
 
@@ -1684,8 +1906,23 @@ const deptOf = r => DEPTS[r.dept] || {name:"Team", tint:"#8E8E93"};
 
 /* ========== sheet backend ========== */
 let sheetConnected = false;
-function getToken(){ try{ return (localStorage.getItem(TOKEN_KEY) || "").trim(); }catch(e){ return ""; } }
+/* A token pasted into this browser wins; the committed one is the floor, so
+   an app with SHEET_TOKEN filled is never tokenless and every "have we got a
+   token?" gate in the app — boot, the retry chain, keep-warm — is simply
+   true from the first frame. Clearing the field in Settings drops back to the
+   built-in rather than to nothing, which is why disconnecting is not a thing
+   you can do by accident. */
+function getToken(){
+  try{ const v = (localStorage.getItem(TOKEN_KEY) || "").trim(); if(v) return v; }catch(e){}
+  return String(SHEET_TOKEN || "").trim();
+}
 function setToken(v){ try{ v && v.trim() ? localStorage.setItem(TOKEN_KEY, v.trim()) : localStorage.removeItem(TOKEN_KEY); }catch(e){} }
+/* true when the token in play is the committed one — the status line says
+   "connects itself" rather than naming a paste that never happened */
+function usingBuiltInToken(){
+  try{ if((localStorage.getItem(TOKEN_KEY) || "").trim()) return false; }catch(e){}
+  return !!String(SHEET_TOKEN || "").trim();
+}
 function getEndpoint(){
   try{
     const v = (localStorage.getItem(ENDPOINT_KEY) || "").trim();
@@ -1720,6 +1957,34 @@ function applyTokenInput(raw){
   setToken(v);
   return { kind:"token", token: v };
 }
+
+/* Layer 2: a token carried in on the URL.
+       …/index.html#token=XYZ        …/index.html?token=XYZ
+   plus an optional &endpoint=https://script.google.com/…/exec when the
+   deployment has moved. Both forms are adopted into this browser and then
+   scrubbed out of the address bar with replaceState, so the secret does not
+   survive into history, a screenshot, a shared link, or a bookmark made after
+   arriving. One visit connects that device permanently — which is how a
+   device gets connected when SHEET_TOKEN is deliberately left empty.
+
+   Runs at parse time, before boot() reads getToken(), so a page opened with a
+   token on it is already connected on its first attempt rather than one retry
+   later. */
+(function adoptTokenFromURL(){
+  try{
+    const hash = new URLSearchParams(String(location.hash || "").replace(/^#/, ""));
+    const qs = new URLSearchParams(location.search || "");
+    const tok = (hash.get("token") || qs.get("token") || "").trim();
+    const ep  = (hash.get("endpoint") || qs.get("endpoint") || "").trim();
+    if(!tok && !ep) return;
+    /* endpoint first: applyTokenInput on a URL may carry its own ?token= */
+    if(ep) applyTokenInput(ep);
+    if(tok) setToken(tok);
+    ["token", "endpoint"].forEach(k => { hash.delete(k); qs.delete(k); });
+    const h = hash.toString(), s = qs.toString();
+    history.replaceState(null, "", location.pathname + (s ? "?" + s : "") + (h ? "#" + h : ""));
+  }catch(e){}
+})();
 
 /* text/plain on purpose: Apps Script doesn't answer CORS preflight, and a
    JSON content type would trigger one. The token rides the query string.
@@ -1916,7 +2181,9 @@ document.addEventListener("visibilitychange", () => {
 });
 function showBanner(html){ $("#appBannerText").innerHTML = html; $("#appBanner").hidden = false; }
 function hideBanner(){ $("#appBanner").hidden = true; }
-const SAMPLE_BANNER = "Running on built-in sample data — add your access token in Settings to connect the Sheet.";
+const SAMPLE_BANNER = "<b>Running on built-in sample data</b> — no access token in this browser. " +
+  "Paste one in Settings › Chat, or open this page once with <code>#token=YOUR_TOKEN</code> on the end of the URL " +
+  "and this device stays connected from then on.";
 
 const asBool = (v, dflt) => (v === undefined || v === null || v === "") ? dflt
   : v === true || v === "TRUE" || v === "true" || v === 1 || v === "1";
@@ -2158,6 +2425,8 @@ function applyChrome(){
   document.documentElement.style.setProperty("--accent", state.accent);
   $("#navCompany").textContent = state.company;
   $("#navSub").textContent = state.subtitle;
+  $("#wsCompany").textContent = state.company;
+  $("#wsSub").textContent = state.subtitle;
   $("#pageTitle").textContent = state.title;
   $("#pageSub").textContent = state.blurb;
   document.title = `${state.company} — ${state.subtitle}`;
@@ -3349,8 +3618,6 @@ function msgHTML(m, o){
   }
   const kind = m.role === "user" ? "me" : "from";
   const tone = m.note ? "note" : m.error ? "err" : "";
-  const speaker = (o.speakers && m.role === "assistant" && !m.note && !m.error)
-    ? roleById(m.speaker) : null;
   /* Only an answer is rendered as markdown. What you typed is shown back to
      you exactly as you typed it — nobody wants their own asterisks eaten. */
   const rich = m.role === "assistant" && !m.note && !m.error
@@ -3358,12 +3625,55 @@ function msgHTML(m, o){
   const bubble = rich && rich.rich
     ? `<div class="bubble rich${rich.structured ? " wide" : ""}">${rich.html}</div>`
     : `<div class="bubble">${esc(displayText(m))}</div>`;
-  if(!speaker) return `<div class="msg ${kind} ${tone}">${bubble}</div>`;
-  return `<div class="msg from tagged" style="--tint:${deptOf(speaker).tint}">
-      <span class="who">${avatarSVG(speaker, "", 26)}</span>
-      <div class="said"><span class="whoName">${esc(speaker.title)}</span>${bubble}</div>
+  /* A note is the app talking, not a person — it stays centred and unsigned. */
+  if(m.note) return `<div class="msg note">${bubble}</div>`;
+  /* =============================================================
+     EVERY MESSAGE IS SIGNED
+
+     Attribution used to be conditional: a reply wore its author's
+     mark only once a second persona had joined, and what you typed
+     wore nothing ever, because a right-aligned coloured bubble was
+     understood to be yours. That reads fine as a phone messenger and
+     badly as a workplace transcript — the two speakers are told
+     apart by which edge of the column they hug, so a scrolled-back
+     thread is a wall of alternating shapes rather than a list of who
+     said what.
+
+     Now every message is one row: avatar, name, time, then the words
+     at full column width. Runs by the same person inside five
+     minutes collapse into the first row's header, which is what
+     keeps a signed transcript from becoming a stack of name tags.
+  ============================================================= */
+  const speaker = m.role === "assistant" ? (roleById(m.speaker) || roleById(o.fallback)) : null;
+  const tint = speaker ? deptOf(speaker).tint : "";
+  const name = m.role === "user" ? "You" : (speaker ? speaker.title : "Assistant");
+  const face = m.role === "user" ? meAvatar(36)
+             : speaker ? avatarSVG(speaker, "", 36) : meAvatar(36);
+  const time = m.at ? fmtTime(m.at) : "";
+  return `<div class="msg ${kind} ${tone} tagged${o.cont ? " cont" : ""}"${tint ? ` style="--tint:${tint}"` : ""}>
+      <span class="who">${face}<span class="hoverTime">${esc(time)}</span></span>
+      <div class="said">
+        <span class="mHead"><span class="whoName">${esc(name)}</span><span class="mTime">${esc(time)}</span></span>
+        ${bubble}
+      </div>
     </div>`;
 }
+/* The person at the keyboard has no Personas row, so their mark is drawn
+   rather than looked up — same square, same size, the accent colour. */
+function meAvatar(size){
+  return `<svg class="avatar meAvatar" width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true">
+    <rect x="6" y="6" width="88" height="88" rx="26" fill="var(--accent)"/>
+    <circle cx="50" cy="40" r="13" fill="#fff" opacity=".95"/>
+    <path d="M50 57c-14 0-24 8-24 17v6h48v-6c0-9-10-17-24-17Z" fill="#fff" opacity=".95"/>
+  </svg>`;
+}
+/* Which run of messages this one belongs to. A handoff marker or a note ends
+   the run, so the next real message always re-introduces its author. */
+function authorKey(m){
+  if(m.switchTo || m.note) return null;
+  return m.role === "user" ? "me" : "p:" + (m.speaker || "");
+}
+const RUN_GAP_MS = 5 * 60 * 1000;
 let lastThreadKey = null;
 function renderThread(){
   const r = roleById(selectedId), box = $("#thread");
@@ -3393,17 +3703,24 @@ function renderThread(){
     refreshSendUI();
     return;
   }
-  const time = new Date(t[0]?.at || Date.now())
-    .toLocaleTimeString([], {hour:"numeric", minute:"2-digit"});
-  const speakers = castOf(convId).length > 1;
+  const started = t[0]?.at || Date.now();
   const lastIdx = t.length - 1;
   const asked = t.some(m => m.role === "user" && !m.error);
+  /* Runs of one speaker collapse into one signed header, so a five-message
+     answer is one name and not five. */
+  let prevKey = null, prevAt = 0;
+  const rows = t.map((m, i) => {
+    const k = authorKey(m);
+    const cont = !!k && k === prevKey && (m.at || 0) - prevAt < RUN_GAP_MS;
+    prevKey = k; if(k) prevAt = m.at || prevAt;
+    return msgHTML(m, { cont, fallback: selectedId, reask: i === lastIdx && asked && !blocked });
+  }).join("");
   box.innerHTML =
     threadNotices(r) +
-    `<div class="stamp">Today ${time}</div>` +
+    `<div class="stamp"><span>${esc(dayGroup(started))}</span></div>` +
     `<div class="clearBar"><button data-clear>Start a new conversation</button></div>` +
-    t.map((m, i) => msgHTML(m, { speakers, reask: i === lastIdx && asked && !blocked })).join("") +
-    (pending.has(convId) ? `<div class="msg from"><div class="dots"><i></i><i></i><i></i></div></div>` : "");
+    rows +
+    (pending.has(convId) ? `<div class="msg from typing"><span class="who">${avatarSVG(r, "", 36)}</span><div class="said"><div class="dots"><i></i><i></i><i></i></div></div></div>` : "");
   if(!sameConv || nearBottom) box.scrollTop = box.scrollHeight;
   else box.scrollTop = wasAt;
   refreshSendUI();
@@ -3423,6 +3740,21 @@ function renderCast(){
       </button>`;
   }).join("");
   $("#castAdd").textContent = cast.length > 1 ? "+ Add" : "+ Bring in";
+  renderFacepile(cast);
+}
+/* The header's copy of the cast: faces and a count, the way a channel header
+   shows its members. Hidden for a conversation of one, where a facepile of a
+   single person is just the avatar already sitting to its left. */
+const FACE_MAX = 3;
+function renderFacepile(cast){
+  const pile = $("#facepile");
+  if(!pile) return;
+  const ids = (cast || []).filter(id => roleById(id));
+  pile.hidden = ids.length < 2;
+  if(pile.hidden){ pile.innerHTML = ""; return; }
+  pile.innerHTML = ids.slice(0, FACE_MAX).map(id => avatarSVG(roleById(id), "", 24)).join("") +
+    `<span class="faceN">${ids.length}</span>`;
+  pile.setAttribute("title", castLabel(ids) + " — click to add someone");
 }
 /* The send button doubles as the cancel control while this persona's answer
    is in flight — there is always a live control, never a stuck spinner. */
@@ -3746,7 +4078,10 @@ function renderMain(){
           <span class="k" style="color:var(--accent)">Use the built-in endpoint again<small style="overflow-wrap:anywhere">Currently: ${esc(getEndpoint())}</small></span>
         </button>` : ""}
       </div>
-      <p class="footNote">Paste either the bare token, or the whole <code>/exec</code> URL from Apps Script's deploy dialog (with <code>?token=…</code> on the end if you like) — the app splits it and remembers both in this browser, so one paste per device is all it ever takes. After a re-deploy that mints a new URL, paste the new one here. Keep the Anthropic key in Script Properties, never in this page.</p>
+      <p class="footNote">${usingBuiltInToken()
+        ? "This page carries its own token, so every browser that opens it is connected without any setup. Anything you paste here overrides that for this browser only; clearing the field falls back to the built-in one rather than disconnecting."
+        : "Paste either the bare token, or the whole <code>/exec</code> URL from Apps Script's deploy dialog (with <code>?token=…</code> on the end if you like) — the app splits it and remembers both in this browser."}
+        You can also connect a device without ever typing here, by opening the page once with <code>#token=YOUR_TOKEN</code> on the end of the URL: it is saved and wiped from the address bar. After a re-deploy that mints a new <code>/exec</code> URL, paste the new one here. Keep the Anthropic key in Script Properties, never in this page.</p>
     </section>
 
     <section class="sect">
@@ -4081,7 +4416,9 @@ function runEditRender(now){
 
 /* ---------- sheet sync ---------- */
 function connStatusText(){
-  if(sheetConnected) return "Connected — personas and settings come from your Sheet.";
+  if(sheetConnected) return usingBuiltInToken()
+    ? "Connected automatically — personas and settings come from your Sheet."
+    : "Connected — personas and settings come from your Sheet.";
   if(!getToken()) return "Empty — running on built-in sample data until you paste a token.";
   return retryTimer ? "Not connected — retrying automatically." : "Not connected.";
 }
@@ -4174,6 +4511,13 @@ async function connectNow(){
 addEventListener("online", () => { if(!sheetConnected && getToken()) connectNow(); });
 document.addEventListener("visibilitychange", () => {
   if(!document.hidden && !sheetConnected && getToken()) connectNow();
+});
+/* Restored from the back/forward cache: the page resumes with whatever state
+   it was frozen in, so a tab that was disconnected when it went into the
+   cache comes back disconnected and with its retry timer dead. Treat the
+   restore as a fresh look at the tab. */
+addEventListener("pageshow", e => {
+  if(e.persisted && !sheetConnected && getToken()) connectNow();
 });
 
 /* A settings paste restarts the attempt chain from the top, so a corrected
@@ -4429,6 +4773,11 @@ $("#castRow").addEventListener("click", e => {
   if(b) switchSpeaker(b.dataset.cast);
 });
 $("#castAdd").addEventListener("click", () => openPicker("bring"));
+/* Three doors to the same room: the cast bar's button, the header's add-person
+   icon, and the facepile itself — a member list you can click is how you
+   expect to add a member. */
+$("#headAdd").addEventListener("click", () => openPicker("bring"));
+$("#facepile").addEventListener("click", () => openPicker("bring"));
 
 /* messenger */
 $("#tabSeg").addEventListener("click", e => {
@@ -4818,7 +5167,11 @@ if(Speech.supported()){
    The Team pane is the org outline that used to be the whole rail —
    it starts a conversation, where the Chats pane returns to one.
 ================================================================= */
-const sideState = { pane:"chats", q:"", hits:null, hitsFor:"", editing:null, confirming:null, loading:false, error:"" };
+const sideState = { pane:"chats", q:"", hits:null, hitsFor:"", editing:null, confirming:null, loading:false, error:"", sections:{ chats:true, team:true } };
+try{
+  const saved = JSON.parse(localStorage.getItem("pa_sections") || "null");
+  if(saved && typeof saved === "object") Object.assign(sideState.sections, saved);
+}catch(e){}
 
 function showMenu(){
   document.body.classList.add("menu-open");
@@ -4843,15 +5196,30 @@ function toggleMenu(){
   $("#menuBtn").setAttribute("aria-expanded", String(!off));
   if(!off) renderSide();
 }
+/* Both lists are on screen at once now, so "which pane" stopped being a
+   question — a section is open or collapsed, and that is all. setSidePane
+   keeps its name and its callers: asking for a pane opens that section and
+   brings it into view rather than hiding the other one. */
+const SECT_KEY = "pa_sections";
+function sectionOpen(name){ return sideState.sections[name] !== false; }
+function applySections(){
+  ["chats", "team"].forEach(name => {
+    const open = sectionOpen(name);
+    const sect = $("#sect" + name[0].toUpperCase() + name.slice(1));
+    const disc = $(`.sectDisc[data-sect="${name}"]`);
+    if(sect) sect.classList.toggle("closed", !open);
+    if(disc) disc.setAttribute("aria-expanded", String(open));
+  });
+  try{ localStorage.setItem(SECT_KEY, JSON.stringify(sideState.sections)); }catch(e){}
+}
+function toggleSection(name){
+  sideState.sections[name] = !sectionOpen(name);
+  applySections();
+}
 function setSidePane(pane){
   sideState.pane = pane;
-  $("#sideSwitch").classList.toggle("b", pane === "team");
-  $("#sideSwitch").querySelectorAll("[data-side]").forEach(b =>
-    b.setAttribute("aria-pressed", String(b.dataset.side === pane)));
-  $("#paneChats").hidden = pane !== "chats";
-  $("#paneTeam").hidden = pane !== "team";
-  $("#sideSearchRow").hidden = pane !== "chats";
-  if(pane === "chats") renderSide();
+  if(pane){ sideState.sections[pane] = true; applySections(); }
+  renderSide();
 }
 
 /* ---------- when a conversation happened ---------- */
@@ -4933,7 +5301,6 @@ function convMeta(c){
   return bits.join(" · ");
 }
 function renderSide(){
-  if(sideState.pane !== "chats") return;
   const list = $("#paneChats");
   if(!list) return;
   const q = sideState.q;
@@ -4984,9 +5351,9 @@ function renderSideEditing(list){
    Sheet, or only what this browser happens to hold — because the difference is
    invisible and the second one looks exactly like a short history. */
 function sideFootHTML(n){
-  if(!getToken()) return `<p class="sideFoot">Not connected to your Sheet, so these ${n}
-    conversation${n === 1 ? "" : "s"} live in this browser only. Add your access token in
-    Settings › Chat to keep them.</p>`;
+  if(!getToken()) return `<p class="sideFoot">Not connected to your Sheet, so ${n === 1
+    ? "this conversation lives" : `these ${n} conversations live`} in this browser only. Add your
+    access token in Settings › Chat to keep them.</p>`;
   if(historyNote) return `<p class="sideFoot">This browser's conversations only — reading the
     rest from your Sheet failed: ${esc(historyNote.replace(/\.\s*$/, ""))}. It retries on its own.</p>`;
   if(!sheetConnected) return `<p class="sideFoot">Loaded from this browser. The Sheet isn't
@@ -5205,9 +5572,10 @@ async function deleteConv(k){
 /* ---------- wiring ---------- */
 $("#menuBtn").addEventListener("click", toggleMenu);
 $("#newChat").addEventListener("click", () => newChat(selectedId));
-$("#sideSwitch").addEventListener("click", e => {
-  const b = e.target.closest("[data-side]");
-  if(b) setSidePane(b.dataset.side);
+$("#newChatRow").addEventListener("click", () => newChat(selectedId));
+$("#sideScroll").addEventListener("click", e => {
+  const d = e.target.closest(".sectDisc");
+  if(d) toggleSection(d.dataset.sect);
 });
 $("#sideQuery").addEventListener("input", onSearchInput);
 $("#sideQuery").addEventListener("keydown", e => {
@@ -5296,22 +5664,32 @@ svg[hidden]{display:none}
 .meta span{font-size:10px;text-transform:uppercase;letter-spacing:.07em;font-weight:700;color:var(--tint)}
 .hBtn{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;flex:none;background:rgba(120,120,128,.16)}
 .hBtn svg{width:14px;height:14px}
-.thread{flex:1;min-height:0;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:7px}
-.msg{display:flex}
-.msg.me{justify-content:flex-end}
+.thread{flex:1;min-height:0;overflow-y:auto;padding:8px 0;display:flex;flex-direction:column}
+/* the same signed rows as the main window, at pop-out scale — msgHTML is
+   shared, so this markup arrives here whether or not this window styles it */
+.msg{display:flex;gap:6px;align-items:flex-start;padding:4px 10px}
+.msg.cont{padding-top:1px;padding-bottom:1px}
+.who{flex:none;width:24px}
+.who .avatar{width:24px;height:24px;display:block;border-radius:5px}
+.msg.cont .who .avatar{display:none}
+.hoverTime{display:none}
+.said{flex:1;min-width:0;display:flex;flex-direction:column}
+.mHead{display:flex;align-items:baseline;gap:6px;margin-bottom:1px}
+.msg.cont .mHead{display:none}
+.whoName{font-size:12.5px;font-weight:700;letter-spacing:-.005em}
+.mTime{font-size:10px;color:rgba(120,120,128,.95)}
 .bubble{
-  max-width:86%;padding:7px 11px;border-radius:15px;font-size:13.5px;line-height:1.4;
-  white-space:pre-wrap;overflow-wrap:anywhere;background:rgba(120,120,128,.16);
+  max-width:100%;padding:0;border-radius:0;background:none;font-size:13px;line-height:1.42;
+  white-space:pre-wrap;overflow-wrap:anywhere;
 }
-.msg.from .bubble{border-bottom-left-radius:5px}
-.msg.me .bubble{background:var(--accent);color:#fff;border-bottom-right-radius:5px}
-.msg.err .bubble{background:rgba(255,59,48,.16);color:#FF3B30}
-.msg.note{justify-content:center}
+.msg.err .bubble{color:#FF3B30}
+.msg.note{justify-content:center;padding:2px 10px}
 .msg.note .bubble{background:none;color:rgba(120,120,128,.95);font-size:11.5px;padding:1px 6px}
+.meAvatar rect{fill:var(--accent)}
 /* the same sectioned answer, at pop-out scale — msgHTML is shared, so the
    markup arrives here whether or not this window styles it */
 .bubble.rich{white-space:normal}
-.bubble.wide{max-width:96%}
+.bubble.wide{max-width:100%}
 .ans{display:flex;flex-direction:column;gap:8px}
 .ans > .sect{display:flex;flex-direction:column;gap:3px}
 .ans > .sect + .sect{border-top:.5px solid rgba(120,120,128,.3);padding-top:8px}
@@ -5334,7 +5712,7 @@ svg[hidden]{display:none}
 .ans .sect[data-kind="question"] .body,.ans .sect[data-kind="sources"] .body{color:rgba(120,120,128,.95);font-size:12px}
 .ans .sect[data-kind="sources"] ul{list-style:none;padding-left:0}
 .empty{margin:auto;text-align:center;color:rgba(120,120,128,.95);font-size:12.5px;padding:0 20px;line-height:1.5}
-.dots{display:flex;gap:4px;padding:10px 12px;background:rgba(120,120,128,.16);border-radius:15px;border-bottom-left-radius:5px}
+.dots{display:flex;gap:4px;padding:7px 0 3px}
 .dots i{width:6px;height:6px;border-radius:50%;background:rgba(120,120,128,.95);animation:dot 1.3s infinite}
 .dots i:nth-child(2){animation-delay:.16s}
 .dots i:nth-child(3){animation-delay:.32s}
@@ -5372,13 +5750,7 @@ textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent
 .badgeView .lbl{font-size:11.5px;color:rgba(120,120,128,.95)}
 body.collapsed .thread,body.collapsed .composer{display:none}
 body.collapsed .badgeView{display:flex}
-.msg.tagged{align-items:flex-start;gap:6px}
-.msg.tagged .who{flex:none}
-.msg.tagged .who .avatar{width:20px;height:20px;display:block}
-.msg.tagged .said{display:flex;flex-direction:column;gap:2px;min-width:0;max-width:86%}
-.msg.tagged .whoName{font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--tint);padding-left:3px}
-.msg.tagged .bubble{max-width:100%}
-.msg.handoff{justify-content:center}
+.msg.handoff{justify-content:center;padding:5px 10px}
 .handoffPill{
   display:flex;align-items:center;gap:6px;padding:3px 10px 3px 4px;border-radius:999px;
   background:rgba(120,120,128,.16);color:rgba(120,120,128,.95);font-size:11px;
@@ -5551,12 +5923,19 @@ const PopOut = {
     if(!this.win) return;
     const box = this.els.thread;
     const t = threads[this.convId] || [];
-    const speakers = castOf(this.convId).length > 1;
     const wasAt = box.scrollTop;
     const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    let pKey = null, pAt = 0;
     box.innerHTML = (t.length || pending.has(this.convId))
-      ? t.map(m => msgHTML(m, { speakers })).join("") +
-        (pending.has(this.convId) ? `<div class="msg from"><div class="dots"><i></i><i></i><i></i></div></div>` : "")
+      ? t.map(m => {
+          const k = authorKey(m);
+          const cont = !!k && k === pKey && (m.at || 0) - pAt < RUN_GAP_MS;
+          pKey = k; if(k) pAt = m.at || pAt;
+          return msgHTML(m, { cont, fallback: this.roleId });
+        }).join("") +
+        (pending.has(this.convId)
+          ? `<div class="msg from"><span class="who">${roleById(this.roleId) ? avatarSVG(roleById(this.roleId), "", 24) : ""}</span><div class="said"><div class="dots"><i></i><i></i><i></i></div></div></div>`
+          : "")
       : `<div class="empty">This window stays pinned to this persona, even while the main app browses others. Ask something below.</div>`;
     box.scrollTop = nearBottom ? box.scrollHeight : wasAt;
     this.refreshSend();
