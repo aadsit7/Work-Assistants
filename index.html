@@ -1634,6 +1634,11 @@ function knName(k){
 }
 const HTTP_URL = /^https?:\/\/[^\s]+$/i;
 
+/* An array either way: the Sheet sends these as arrays, an exported file or a
+   hand-edited cell can send the joined string they were split from. */
+const asList = (v, sep) => (Array.isArray(v) ? v : String(v == null ? "" : v).split(sep))
+  .map(x => String(x).trim()).filter(Boolean);
+
 function normalizeRoles(){
   state.roles.forEach(r => {
     r.parent = r.parent || null;
@@ -1644,6 +1649,13 @@ function normalizeRoles(){
     r.outOfScope = r.outOfScope || "";
     r.language = String(r.language || "").trim();   // dictation language, e.g. "de-DE"
     r.voice = String(r.voice || "").trim();         // TTS voice name from the VoiceProfiles tab; "" = Automatic
+    /* Three Sheet columns this page has no editor for but buildPrompt must
+       still print, in the shape Code.gs prints them — the fingerprint the
+       server checks is computed over the result, so a string where an array
+       belongs is a message that can never be answered. */
+    r.productBias = String(r.productBias || "");
+    r.bannedPhrases = asList(r.bannedPhrases, /\s*,\s*/);
+    r.researchDomains = asList(r.researchDomains, /\r?\n/);
     r.version = Number(r.version) || 1;
     /* server-side optimistic-concurrency counter; 0 = the server didn't send
        one, and the client then omits it from saves so the server's conflict
@@ -1801,13 +1813,44 @@ function setConnected(on){
    re-reads it on the cadence the Sheet itself sets
    (Settings.sync_interval_seconds, default 30s, floor 10s). Edits
    made in the Sheet or on another device appear here without a
-   reload; edits made here still write back instantly through
-   savePersona. A tick is skipped whenever it could clobber work in
-   flight: a pending persona save, the Settings sheet open, or the
-   tab hidden. Nothing re-renders unless the loaded state actually
-   changed, and the current selection, threads, and composer drafts
-   are never touched by a sync render.
+   reload; edits made here still write back through savePersona.
+   A tick is skipped while the tab is hidden or a write is actually
+   on the wire; everything else the merge below handles, so the
+   Sheet keeps flowing back even with Settings open. Nothing
+   re-renders unless the loaded state actually changed, and the
+   current selection, threads, and composer drafts are never touched
+   by a sync render.
 ================================================================= */
+/* =================================================================
+   WHAT THIS BROWSER KNOWS THAT THE SHEET DOES NOT YET
+
+   Every background tick used to replace state.roles wholesale with
+   whatever config returned. That is correct only while this browser
+   has nothing the Sheet hasn't got — and between a keystroke and the
+   save that carries it, it always does. A tick landing in that gap
+   put the Sheet's older copy back on screen, so a word typed thirty
+   seconds ago un-typed itself and a role added a moment ago vanished:
+   the "sticky" the app was reported to feel.
+
+   So a write is tracked from the moment it is made until the Sheet
+   confirms it, and a sync merges around what is still in flight
+   rather than overwriting it. Nothing here queues forever: a role
+   whose save is confirmed leaves the set, and a role edited again
+   while its save was in flight stays in it until the newer save
+   lands, which is what stops a slow round trip from reverting the
+   keystrokes that happened during it.
+================================================================= */
+const dirtyRoles = new Set();     // persona ids whose on-screen copy is ahead of the Sheet
+const removedRoles = new Set();   // removed here, not yet archived in the Sheet
+const roleSeq = new Map();        // persona id -> local edit counter, so a stale save can't mark it clean
+let orgDirty = false;             // company + appearance edits not yet written back
+let orgSeq = 0;
+/* A write counts as outstanding for its whole life, backoff included — a
+   request that is going to be sent again in four seconds is not finished, and
+   a config read adopted in the gap would be reading around it. */
+let writesInFlight = 0;
+const hasPendingWrites = () => writesInFlight > 0 || !!savePendingId || removedRoles.size > 0;
+
 let syncTimer = null, syncBusy = false;
 function syncIntervalMs(){
   const s = Number(state.settings && state.settings.sync_interval_seconds);
@@ -1822,7 +1865,11 @@ const syncSnapshot = () => JSON.stringify([state.roles, state.company, state.sub
   state.title, state.blurb, state.appearance, state.accent, state.lines, state.motion, DEPTS]);
 async function backgroundSync(){
   if(!sheetConnected || !getToken() || document.hidden || syncBusy) return;
-  if(savePendingId || $("#sheet").classList.contains("on")) return;
+  /* Only a write actually on the wire stops a tick now. Everything else is
+     handled by applyConfig merging around what is unsaved, which is what lets
+     the Sheet keep flowing back while Settings is open — the whole point of a
+     two-way connection is that the other side is still allowed to speak. */
+  if(hasPendingWrites()) return;
   syncBusy = true;
   try{
     const cfg = await sheetCall({ action:"config" }, { timeoutMs:20000 });
@@ -1832,6 +1879,17 @@ async function backgroundSync(){
     applyConfig(cfg);
     armSync();                           // the interval setting itself may have changed
     if(syncSnapshot() === before) return;
+    /* The role being edited was removed in the Sheet while its pane was open —
+       step back to the list rather than leaving a pane bound to a role that no
+       longer exists, where every keystroke would land nowhere. */
+    if(editingId && !roleById(editingId)){ renderMain(); goDeep(false); }
+    else if($("#sheet").classList.contains("on") && !editingHere()){
+      /* Settings is open and showing something the Sheet just changed. Redrawn
+         only while the caret is somewhere else: re-rendering a pane the person
+         is typing into moves the caret to the end of the field, which is the
+         one thing worse than a pane a few seconds out of date. */
+      $("#panes").classList.contains("deep") ? renderRolePane() : renderMain();
+    }
     if(!roleById(selectedId)){ selectRole(rootRole().id); return; }
     applyChrome(); renderChart(); renderCard();
     if(tab === "chat") renderThread();
@@ -1863,8 +1921,35 @@ const SAMPLE_BANNER = "Running on built-in sample data — add your access token
 const asBool = (v, dflt) => (v === undefined || v === null || v === "") ? dflt
   : v === true || v === "TRUE" || v === "true" || v === 1 || v === "1";
 
+/* Is the caret inside the settings sheet? A pane is never redrawn under a
+   person who is typing into it. */
+const editingHere = () => {
+  const a = document.activeElement;
+  return !!(a && a !== document.body && $("#sheet").contains(a));
+};
+
 function applyConfig(cfg){
-  state = {
+  /* Roles this browser holds a newer copy of. They survive the read intact —
+     adopting the Sheet's older row would undo the very edit whose save is on
+     its way there. A role created here that the Sheet has not got yet is in
+     the same set, which is what keeps it on the chart between the click that
+     made it and the save that files it. */
+  const keep = new Map();
+  state.roles.forEach(r => { if(dirtyRoles.has(r.id)) keep.set(r.id, r); });
+
+  const roles = cfg.roles
+    .filter(r => !removedRoles.has(r.id))   // removed here; its archive is still in flight
+    .map(r => keep.has(r.id) ? keep.get(r.id) : Object.assign({}, r));
+  const arrived = new Set(roles.map(r => r.id));
+  keep.forEach((r, id) => { if(!arrived.has(id)) roles.push(r); });
+
+  /* Company name, headings and appearance are one unit: they are edited
+     together and written back together, so either the Sheet's copy or this
+     browser's unsaved one wins — never a row of each. */
+  const org = orgDirty ? {
+    company: state.company, subtitle: state.subtitle, title: state.title, blurb: state.blurb,
+    appearance: state.appearance, accent: state.accent, lines: state.lines, motion: state.motion
+  } : {
     company: String(cfg.company || DEFAULTS.company),
     subtitle: String(cfg.subtitle || DEFAULTS.subtitle),
     title: String(cfg.title || DEFAULTS.title),
@@ -1872,10 +1957,16 @@ function applyConfig(cfg){
     appearance: cfg.appearance === "dark" ? "dark" : "light",
     accent: String(cfg.accent || DEFAULTS.accent),
     lines: asBool(cfg.lines, true),
-    motion: asBool(cfg.motion, true),
-    settings: cfg.settings || {},
-    roles: cfg.roles.map(r => Object.assign({}, r))
+    motion: asBool(cfg.motion, true)
   };
+
+  state = Object.assign(org, {
+    /* the OrgCharts row these came from, echoed on saveOrg so the write lands
+       back in the row it was read from */
+    orgChartId: String(cfg.orgChartId || state.orgChartId || ""),
+    settings: cfg.settings || {},
+    roles: roles
+  });
   rebuildDepts(state.roles);
   normalizeRoles();
   /* the Sheet's VocabularyFixes ride the config; merged over the built-ins
@@ -2025,10 +2116,10 @@ function outlineRow(role, sub){
       ${asked ? `<span class="oBadge">${asked}</span>` : ""}
     </button>`;
 }
-function renderOutline(){
+function outlineHTML(){
   const byDept = {};
   state.roles.forEach(r => (byDept[r.dept] = byDept[r.dept] || []).push(r));
-  $("#outline").innerHTML = Object.keys(DEPTS).filter(k => byDept[k]).map(k => {
+  return Object.keys(DEPTS).filter(k => byDept[k]).map(k => {
     const group = byDept[k];
     const inGroup = id => group.some(g => g.id === id);
     const rows = [];
@@ -2043,12 +2134,21 @@ function renderOutline(){
       </div>`;
   }).join("");
 }
+/* Both halves of the chart are pure functions of the roles, the selection and
+   the asked counts, so identical markup means there is nothing to do — and
+   skipping the write also skips autoFit, whose scrollWidth read forces a
+   synchronous layout. renderChart runs on every message sent and every message
+   received as well as on edits, and most of those change neither half. */
+let lastTreeHTML = null, lastOutlineHTML = null;
 function renderChart(){
   refreshVoiceCSS();
   recountAsked();
   const root = rootRole();
-  $("#tree").innerHTML = root ? `<ul>${branch(root)}</ul>` : "";
-  renderOutline();
+  const tree = root ? `<ul>${branch(root)}</ul>` : "";
+  const outline = outlineHTML();
+  if(tree === lastTreeHTML && outline === lastOutlineHTML) return;
+  if(tree !== lastTreeHTML){ $("#tree").innerHTML = tree; lastTreeHTML = tree; }
+  if(outline !== lastOutlineHTML){ $("#outline").innerHTML = outline; lastOutlineHTML = outline; }
   autoFit();
 }
 function applyChrome(){
@@ -2084,7 +2184,14 @@ function applyChrome(){
    Sheet or on another device flow back here without a reload.
 
      { action:"config" }                  -> org chart, settings, personas
-     { action:"savePersona", persona }    -> write one brief back
+     { action:"savePersona", persona,
+       create, rowVersion }               -> write one brief back, opening a
+                                             row for a persona the Sheet has
+                                             not got — which is what "add a
+                                             role" is on this side
+     { action:"deletePersona", personaId } -> soft-archive one persona
+     { action:"saveOrg", org }            -> company name, headings, theme,
+                                             accent and the two chart toggles
      { action:"ping" }                    -> keep-warm no-op
      { action:"chat", roleId, roleTitle, company, system, promptHash,
        promptVersion, personaVersion, temperature, webSearch,
@@ -2409,6 +2516,20 @@ function buildPrompt(role){
   add("[SCOPE]", role.task);
   add("[DEFINITION OF DONE]", role.outcome);
 
+  /* ProductBias, BannedPhrases and ResearchDomains are Personas columns the
+     Sheet ships and this page has no editor for — but Code.gs puts all three
+     into the brief, and the server answers no message whose fingerprint it
+     can't reproduce. Leaving them out here made every persona with one of
+     those cells filled in unusable: each message came back STALE_BRIEF telling
+     you to reload, and reloading produced the same hash it always would. */
+  add("[PRODUCT BIAS]", role.productBias);
+
+  const banned = role.bannedPhrases || [];
+  if(banned.length){
+    add("[HOW YOU TALK]", "Never use these words: " + banned.join(", ") +
+        ". Say what the thing actually does instead.");
+  }
+
   const kn = knowledgeLines(role.knowledge);
   if(kn.length){
     add("[REFERENCE MATERIAL]",
@@ -2419,6 +2540,16 @@ function buildPrompt(role){
   }
   add("[ANSWER FORMAT]", ANSWER_FORMAT);
   add("[SPOKEN ANSWER]", SPOKEN_FORMAT);
+
+  if((role.researchDomains || []).length){
+    add("[RESEARCH RULE]",
+      "Your research process is invisible. Never narrate searching, looking " +
+      "something up, checking documentation, or doing research. You are an " +
+      "experienced professional who simply knows this. The first line of the " +
+      "Answer section is the answer itself, and what the answer rests on is " +
+      "named in the Sources section and nowhere else. This never relaxes.");
+  }
+
   add("[HARD RULES]", role.guardrails);
   add("[OUT OF SCOPE]", role.outOfScope ||
       "If a question falls outside what this role owns, say so plainly in one line and name the role that owns it. Do not answer it anyway.");
@@ -2507,6 +2638,16 @@ const Agent = {
       return await this._ask(payload, signal);
     }catch(err){
       if(err.canceled) throw err;
+      /* STALE_BRIEF says the Sheet rebuilt this persona's brief and got a
+         different fingerprint — which dropping web search cannot change, so
+         re-asking would spend a second request on the same refusal. Pull the
+         current brief instead and answer from that; that is what "reload to
+         pick up the current one" was asking for, done without a reload. */
+      if(err.code === "STALE_BRIEF"){
+        const fresh = await this.refreshBrief(role, payload);
+        if(fresh) return await this._ask(fresh, signal);
+        throw err;
+      }
       try{
         return await this._ask(Object.assign({}, payload, { webSearch:false }), signal);
       }catch(err2){
@@ -2514,6 +2655,24 @@ const Agent = {
         throw err2;
       }
     }
+  },
+  /* Any unsaved edit to this persona sent, then one config read, then the same
+     question rebuilt against whatever came back. Called once per send, so it
+     cannot loop: if the retry fails too, that error is the one shown. */
+  async refreshBrief(role, payload){
+    await settleWrites();
+    let cfg;
+    try{ cfg = await sheetCall({ action:"config" }, { timeoutMs:20000 }); }
+    catch(e){ return null; }
+    if(!Array.isArray(cfg.roles) || !cfg.roles.length) return null;
+    applyConfig(cfg);
+    refreshAfterEdit();
+    const now = roleById(role.id);
+    if(!now) return null;
+    const built = buildPrompt(now);
+    return Object.assign({}, payload, {
+      system: built.text, promptHash: built.hash, personaVersion: now.version || 1
+    });
   },
   async _ask(payload, signal){
     const data = await sheetCall(payload, { timeoutMs: CHAT_TIMEOUT_MS, signal });
@@ -3604,7 +3763,9 @@ function renderMain(){
         <button class="row" data-act="import"><span class="k" style="color:var(--accent)">Import a file</span>${CHEV}</button>
         <button class="row" data-act="reset"><span class="k" style="color:var(--danger)">Reset to the default chart</span></button>
       </div>
-      <p class="footNote">Edits live in this browser tab only. Export a copy to keep them.</p>
+      <p class="footNote">${sheetConnected
+        ? "Everything above is saved back to your Sheet as you change it — the company details, the appearance, and every role. Export writes a copy of the whole chart to a file."
+        : "Not connected, so edits live in this browser tab only. Export a copy to keep them."}</p>
     </section>
     </div>`;
 }
@@ -3861,19 +4022,61 @@ function closeSettings(){
   VoiceTest.leave();
   $("#sheet").classList.remove("on");
   $("#scrim").classList.remove("on");
+  /* Leaving Settings is the moment to stop waiting out a typing pause, and the
+     moment the chart and card become visible again — so anything they skipped
+     while they were covered is drawn now. */
+  flushAllWrites();
+  runEditRender(true);
 }
 function goDeep(deep){
   $("#panes").classList.toggle("deep", deep);
   $("#back").hidden = !deep;
-  if(!deep){ VoiceTest.leave(); $("#sheetTitle").textContent = "Settings"; editingId = null; $("#paneMain").scrollTop = 0; }
+  /* stepping out of a brief ends the typing pause it was waiting on */
+  if(!deep){ flushPersonaSave(); VoiceTest.leave(); $("#sheetTitle").textContent = "Settings"; editingId = null; $("#paneMain").scrollTop = 0; }
   else $("#paneRole").scrollTop = 0;
 }
+/* =================================================================
+   ONE RENDER PER PAUSE, NOT ONE PER KEYSTROKE
+
+   Typing one character into a brief used to run: applyChrome, then
+   renderChart — which rebuilds the whole tree and the whole outline
+   as innerHTML, an inline SVG mark per role, and finishes with
+   autoFit, which sets a zoom, reads scrollWidth and so forces a
+   synchronous layout — and then renderCard, which reassembles the
+   entire system prompt and hashes it. At typing speed that is
+   thirty of those a second, and it is the whole of why the app felt
+   sticky.
+
+   Two things fix it. Edits coalesce: however many arrive, one pass
+   runs shortly after the last one. And a surface nobody can see is
+   not drawn at all — the settings sheet covers the chart and the
+   card completely (full screen on desktop, a 94dvh drawer on a
+   phone), so those renders are marked owed and paid on the way out.
+================================================================= */
+const EDIT_RENDER_MS = 140;
+let editRenderTimer = null, chartOwed = false, cardOwed = false;
+const editWant = { chart:false, card:false, main:false, pane:false };
 function refreshAfterEdit({chart=true, card=true, main=false, pane=false} = {}){
-  applyChrome();
-  if(chart) renderChart();
-  if(card && selectedId) renderCard();
-  if(main) renderMain();
-  if(pane) renderRolePane();
+  editWant.chart = editWant.chart || chart;
+  editWant.card  = editWant.card  || card;
+  editWant.main  = editWant.main  || main;
+  editWant.pane  = editWant.pane  || pane;
+  clearTimeout(editRenderTimer);
+  editRenderTimer = setTimeout(runEditRender, EDIT_RENDER_MS);
+}
+/* `now` is the settings-sheet close: it also pays whatever was owed while the
+   chart and the card were behind it. */
+function runEditRender(now){
+  clearTimeout(editRenderTimer);
+  editRenderTimer = null;
+  const want = Object.assign({}, editWant);
+  editWant.chart = editWant.card = editWant.main = editWant.pane = false;
+  const covered = !now && $("#sheet").classList.contains("on");
+  if(want.chart || want.card || want.main || want.pane || now) applyChrome();
+  if(want.chart || (now && chartOwed)){ if(covered) chartOwed = true; else { renderChart(); chartOwed = false; } }
+  if((want.card || (now && cardOwed)) && selectedId){ if(covered) cardOwed = true; else { renderCard(); cardOwed = false; } }
+  if(want.main) renderMain();
+  if(want.pane) renderRolePane();
 }
 
 /* ---------- sheet sync ---------- */
@@ -3983,9 +4186,42 @@ function scheduleReconnect(){
   reconnectTimer = setTimeout(connectNow, 900);
 }
 
+/* =================================================================
+   WRITES ARE A QUEUE, NOT A SINGLE SHOT
+
+   A save used to be one attempt: send it, and on any failure show a
+   banner and drop the edit. Apps Script fails for weather all the
+   time — a cold start past the timeout, a phone changing networks,
+   a redeploy landing mid-write — so the write everyone actually
+   makes, typing into a brief, was the least reliable thing here.
+
+   Every write now retries on its own backoff and stays marked
+   unsaved until the Sheet confirms it, so a sync can't step on it
+   and a failure can't quietly end it. Only the two answers waiting
+   cannot fix — a rejected token and a genuine edit conflict — stop.
+================================================================= */
+const WRITE_WAITS = [1200, 3000, 7000, 15000, 30000];
+/* Answers that are already final. A conflict needs the other device's version
+   read first; a rejected token needs a person; a role with reports under it
+   needs them moved. Waiting improves none of the three. */
+const STANDING_ANSWER = { CONFLICT:1, HAS_REPORTS:1, NO_SUCH_PERSONA:1, INCOMPLETE_BRIEF:1 };
+const WRITE_GIVES_UP = err => !!STANDING_ANSWER[err.code] || /token/i.test(err.message || "");
+const SAVE_DEBOUNCE_MS = 800;
+
 /* Debounced write-back: one savePersona per pause in typing. */
-function touchRole(r){ r.version = (r.version || 1) + 1; schedulePersonaSave(r.id); }
+function touchRole(r){
+  r.version = (r.version || 1) + 1;
+  roleSeq.set(r.id, (roleSeq.get(r.id) || 0) + 1);
+  schedulePersonaSave(r.id);
+}
 let saveTimer = null, savePendingId = null, warnedUnsaved = false;
+function warnDisconnected(){
+  if(warnedUnsaved) return;
+  warnedUnsaved = true;
+  showBanner("<b>Not connected — this edit stays in this browser.</b> Nothing changed here " +
+    "reaches the Sheet, and the Sheet's own copy replaces it once the connection comes back. " +
+    esc(connStatusText()));
+}
 function schedulePersonaSave(id){
   if(!id) return;
   /* While disconnected the roles on screen are the built-in samples, whose
@@ -3993,56 +4229,89 @@ function schedulePersonaSave(id){
      that must fail, and the next successful config read replaces these roles
      wholesale anyway. So say so once, plainly. Returning in silence is what
      made a lost edit look exactly like a saved one. */
-  if(!sheetConnected){
-    if(!warnedUnsaved){
-      warnedUnsaved = true;
-      showBanner("<b>Not connected — this edit stays in this browser.</b> Nothing changed here " +
-        "reaches the Sheet, and the Sheet's own copy replaces it once the connection comes back. " +
-        esc(connStatusText()));
-    }
-    return;
-  }
+  if(!sheetConnected){ warnDisconnected(); return; }
+  dirtyRoles.add(id);
   if(savePendingId && savePendingId !== id) flushPersonaSave();
   savePendingId = id;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(flushPersonaSave, 1500);
+  saveTimer = setTimeout(flushPersonaSave, SAVE_DEBOUNCE_MS);
 }
-async function flushPersonaSave(){
+/* Sends the pending edit now instead of waiting out the pause. Called wherever
+   waiting would be wrong: closing Settings, hiding the tab, adding a role. */
+function flushPersonaSave(){
   clearTimeout(saveTimer);
-  const r = roleById(savePendingId);
+  const id = savePendingId;
   savePendingId = null;
-  if(!r || !sheetConnected || !getToken()) return;
+  if(id) savePersonaNow(id);
+}
+function personaPayload(r){
   const d = deptOf(r);
+  return {
+    id:r.id, parent:r.parent, dept:r.dept, deptName:d.name, tint:d.tint,
+    title:r.title || "", personality:r.personality || "", context:r.context || "",
+    task:r.task || "", outcome:r.outcome || "", guardrails:r.guardrails || "",
+    /* full source objects, not labels: the Sheet keeps the link and the
+       pasted body in their own columns, and a save that sent labels alone
+       would blank them on every edit */
+    outOfScope:r.outOfScope || "", knowledge:knList(r),
+    /* savePersona sends the complete persona record — leaving Language or
+       Voice out would let any brief edit blank them in the Sheet */
+    language:(r.language || "").trim(),
+    voice:(r.voice || "").trim(),
+    version:r.version || 1,
+    look:{ skin:r.look.skin || "", style:r.look.style }
+  };
+}
+/* One request, retried until it lands or an answer arrives that waiting can't
+   improve. The whole chain is one outstanding write, so backoff time is not a
+   window where the app thinks everything is settled. */
+async function sendWrite(payload, onOk){
+  writesInFlight++;
   try{
-    const res = await sheetCall({ action:"savePersona",
+    for(let attempt = 0; ; attempt++){
+      try{ return await onOk(await sheetCall(payload)); }
+      catch(err){
+        if(WRITE_GIVES_UP(err) || attempt >= WRITE_WAITS.length) throw err;
+      }
+      await new Promise(r => setTimeout(r, WRITE_WAITS[attempt]));
+    }
+  }finally{ writesInFlight--; }
+}
+
+async function savePersonaNow(id){
+  const r = roleById(id);
+  if(!r || removedRoles.has(id)){ dirtyRoles.delete(id); return; }
+  if(!sheetConnected || !getToken()){ warnDisconnected(); return; }
+  /* What the role looked like when this request left. Anything typed while it
+     is in flight bumps the counter, and the reply then leaves the role marked
+     unsaved and schedules the follow-up — which is what stops a slow round
+     trip from reporting a keystroke saved that never went. */
+  const seq = roleSeq.get(id) || 0;
+  try{
+    await sendWrite({
+      action:"savePersona",
+      /* the Sheet opens a row for a persona it has never seen rather than
+         refusing the save — the whole of "add a role" is this flag */
+      create: true,
       /* echoes the server's RowVersion so its conflict check has teeth;
          omitted entirely when the server never sent one (rowVersion 0) */
       rowVersion: r.rowVersion > 0 ? r.rowVersion : undefined,
-      persona:{
-      id:r.id, parent:r.parent, dept:r.dept, deptName:d.name, tint:d.tint,
-      title:r.title || "", personality:r.personality || "", context:r.context || "",
-      task:r.task || "", outcome:r.outcome || "", guardrails:r.guardrails || "",
-      /* full source objects, not labels: the Sheet keeps the link and the
-         pasted body in their own columns, and a save that sent labels alone
-         would blank them on every edit */
-      outOfScope:r.outOfScope || "", knowledge:knList(r),
-      /* savePersona sends the complete persona record — leaving Language or
-         Voice out would let any brief edit blank them in the Sheet */
-      language:(r.language || "").trim(),
-      voice:(r.voice || "").trim(),
-      version:r.version || 1,
-      look:{ skin:r.look.skin || "", style:r.look.style }
-    }});
-    if(res && res.version) r.version = Number(res.version) || r.version;
-    if(res && res.rowVersion) r.rowVersion = Number(res.rowVersion) || r.rowVersion;
-    /* the save kept the brief but not all of it — usually a KnowledgeSources
-       tab without the SourceUrl or Content column. Saying so beats letting a
-       link disappear between here and the Sheet. */
-    if(res && (res.warnings || []).length){
-      showBanner("<b>Saved “" + esc(r.title) + "”, with something left out.</b> " +
-        res.warnings.map(esc).join(" "));
-    }
+      persona: personaPayload(r)
+    }, res => {
+      if(res && res.version) r.version = Number(res.version) || r.version;
+      if(res && res.rowVersion) r.rowVersion = Number(res.rowVersion) || r.rowVersion;
+      if((roleSeq.get(id) || 0) === seq) dirtyRoles.delete(id);
+      else schedulePersonaSave(id);        // edited again mid-flight — send the newer copy
+      /* the save kept the brief but not all of it — usually a KnowledgeSources
+         tab without the SourceUrl or Content column. Saying so beats letting a
+         link disappear between here and the Sheet. */
+      if(res && (res.warnings || []).length){
+        showBanner("<b>Saved “" + esc(r.title) + "”, with something left out.</b> " +
+          res.warnings.map(esc).join(" "));
+      }
+    });
   }catch(err){
+    dirtyRoles.delete(id);                 // stop shielding it: the Sheet's copy is the truth now
     if(err.code === "CONFLICT"){
       showBanner("<b>Another device saved first.</b> “" + esc(r.title) +
         "” was updated somewhere else — reload this page to pick up the latest version, then re-apply your edit.");
@@ -4052,6 +4321,70 @@ async function flushPersonaSave(){
     }
   }
 }
+
+/* A role removed here is archived in the Sheet — the same soft delete the
+   server does everywhere else, so the conversations it answered in still name
+   something. Until that lands the id stays in removedRoles, which is what
+   stops the next config read from putting the role straight back on the
+   chart: the symptom that made removing one look like it did nothing. */
+async function deletePersonaNow(id){
+  if(!sheetConnected || !getToken()){ removedRoles.delete(id); warnDisconnected(); return; }
+  try{
+    await sendWrite({ action:"deletePersona", personaId:id }, () => {});
+  }catch(err){
+    showBanner("Couldn't remove that role from the Sheet (" + esc(err.message) +
+      "). It's gone from this browser, and the Sheet's copy comes back on the next sync.");
+  }finally{ removedRoles.delete(id); }
+}
+
+/* The company name, the headings and the appearance, written back to the
+   OrgCharts row. Editing them used to change nothing but this tab, and the
+   next background read — thirty seconds later — put the old ones back. */
+let orgTimer = null;
+function touchOrg(){
+  if(!sheetConnected){ warnDisconnected(); return; }
+  orgDirty = true;
+  orgSeq++;
+  clearTimeout(orgTimer);
+  orgTimer = setTimeout(flushOrgSave, SAVE_DEBOUNCE_MS);
+}
+function flushOrgSave(){ clearTimeout(orgTimer); if(orgDirty) saveOrgNow(); }
+async function saveOrgNow(){
+  if(!sheetConnected || !getToken()){ orgDirty = false; warnDisconnected(); return; }
+  const seq = orgSeq;
+  try{
+    await sendWrite({ action:"saveOrg", org:{
+      id: state.orgChartId || undefined,
+      company: state.company, subtitle: state.subtitle, title: state.title, blurb: state.blurb,
+      accent: state.accent, appearance: state.appearance, lines: !!state.lines, motion: !!state.motion
+    }}, () => { if(orgSeq === seq) orgDirty = false; else touchOrg(); });
+  }catch(err){
+    orgDirty = false;
+    showBanner("Couldn't save the company details to the Sheet (" + esc(err.message) +
+      "). They're still set in this browser, and the Sheet's copy comes back on the next sync.");
+  }
+}
+
+/* Everything waiting, sent at once. A pause-based debounce is the wrong thing
+   to be honouring when the page is being put away. */
+function flushAllWrites(){ flushPersonaSave(); flushOrgSave(); }
+/* Reset and import replace every id on the page, so a write still queued
+   against the old cast has nothing left to write to — and a stale id left in
+   the dirty set would shield whichever new role happened to reuse it. */
+function forgetPendingWrites(){
+  clearTimeout(saveTimer); savePendingId = null;
+  clearTimeout(orgTimer); orgDirty = false;
+  dirtyRoles.clear(); removedRoles.clear(); roleSeq.clear();
+}
+/* Everything queued, sent, and waited out — bounded, because a write that
+   never lands must not hold up whatever asked for this. */
+async function settleWrites(ms){
+  const until = Date.now() + (ms || 6000);
+  flushAllWrites();
+  while(writesInFlight > 0 && Date.now() < until) await new Promise(r => setTimeout(r, 120));
+}
+document.addEventListener("visibilitychange", () => { if(document.hidden) flushAllWrites(); });
+addEventListener("pagehide", flushAllWrites);
 
 /* ========== events ========== */
 $("#tree").addEventListener("click", e => {
@@ -5986,13 +6319,13 @@ $("#paneMain").addEventListener("click", e => {
     return;
   }
   const tog = t.closest("[data-toggle]");
-  if(tog){ const k = tog.dataset.toggle; state[k] = !state[k]; tog.querySelector(".tog").classList.toggle("on", state[k]); applyChrome(); return; }
+  if(tog){ const k = tog.dataset.toggle; state[k] = !state[k]; tog.querySelector(".tog").classList.toggle("on", state[k]); applyChrome(); touchOrg(); return; }
   const theme = t.closest("[data-theme]");
   /* the mark's shell colour follows the appearance, so the card header and
      thread (empty-state mark) re-render along with the chart */
-  if(theme){ state.appearance = theme.dataset.theme; renderMain(); applyChrome(); renderChart(); renderCard(); renderThread(); return; }
+  if(theme){ state.appearance = theme.dataset.theme; renderMain(); applyChrome(); renderChart(); renderCard(); renderThread(); touchOrg(); return; }
   const acc = t.closest("[data-accent]");
-  if(acc){ state.accent = acc.dataset.accent; renderMain(); applyChrome(); return; }
+  if(acc){ state.accent = acc.dataset.accent; renderMain(); applyChrome(); touchOrg(); return; }
   const ed = t.closest("[data-edit]");
   if(ed){ editingId = ed.dataset.edit; renderRolePane(); goDeep(true); return; }
   const add = t.closest("[data-add]");
@@ -6023,7 +6356,7 @@ $("#paneMain").addEventListener("input", e => {
     return;
   }
   const f = e.target.closest("[data-text]"); if(!f) return;
-  state[f.dataset.text] = f.value; applyChrome();
+  state[f.dataset.text] = f.value; applyChrome(); touchOrg();
 });
 
 /* role pane interactions */
@@ -6096,17 +6429,38 @@ $("#paneRole").addEventListener("keydown", e => {
   }
 });
 function addRole(dept){
+  /* A role added while the Sheet is the source of truth has to reach it, or
+     the row it needs never exists and every later save of it comes back "No
+     persona with id …". Refusing up front beats letting someone write a whole
+     brief into something that was never going to be kept. */
+  if(!sheetConnected && getToken()){
+    showBanner("<b>Can't add a role while the Sheet is unreachable.</b> A new role has to be " +
+      "created in the Sheet, and this page isn't connected to it yet. " + esc(connStatusText()));
+    return;
+  }
   const lead = state.roles.find(r => r.dept === dept && r.parent && roleById(r.parent)?.dept !== dept)
             || state.roles.find(r => r.dept === dept)
             || state.roles.find(r => r.parent === null);
-  const id = "role" + Date.now().toString(36);
-  state.roles.push({
+  const id = "role" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const role = {
     id, parent: lead ? lead.id : null, dept,
     title:"New role",
     look:{ skin:"", style:Math.floor(Math.random()*6) },
-    personality:"", context:"", task:"", knowledge:[], outcome:""
-  });
-  editingId = id; renderRolePane(); goDeep(true); renderChart();
+    personality:"", context:"", task:"", knowledge:[], outcome:"",
+    guardrails:"", outOfScope:"", language:"", voice:"",
+    productBias:"", bannedPhrases:[], researchDomains:[],
+    version:1, rowVersion:0
+  };
+  state.roles.push(role);
+  editingId = id;
+  renderRolePane(); goDeep(true); renderChart(); renderMain();
+  /* Straight to the Sheet, not on the typing debounce: the row has to exist
+     before the first character typed into the pane tries to update it. */
+  if(sheetConnected){
+    dirtyRoles.add(id);
+    roleSeq.set(id, 1);
+    savePersonaNow(id);
+  }
 }
 let armedDelete = false;
 function deleteRole(){
@@ -6131,6 +6485,13 @@ function deleteRole(){
      it stops offering itself in the bar of every conversation it was in. */
   const orphaned = Object.keys(convs).filter(k => convs[k].root === r.id);
   state.roles = state.roles.filter(x => x.id !== r.id);
+  /* The removal has to reach the Sheet too, or the next config read simply
+     hands the role back and removing it looks like it did nothing at all. Any
+     save still queued for it is dropped first — there is nothing left to save. */
+  if(savePendingId === r.id){ clearTimeout(saveTimer); savePendingId = null; }
+  dirtyRoles.delete(r.id);
+  roleSeq.delete(r.id);
+  if(sheetConnected){ removedRoles.add(r.id); deletePersonaNow(r.id); }
   orphaned.forEach(k => cancelAnswer(k, true));
   Object.keys(participants).forEach(k => {
     participants[k] = participants[k].filter(id => id !== r.id);
@@ -6161,6 +6522,7 @@ function mainAction(act, el){
     }
     state = structuredClone(DEFAULTS); rebuildDepts(state.roles); normalizeRoles(); armedReset = false;
     setConnected(false);
+    forgetPendingWrites();
     [...inflight.keys()].forEach(id => cancelAnswer(id, true));
     Object.keys(threads).forEach(k => delete threads[k]);
     Object.keys(convs).forEach(k => delete convs[k]);
@@ -6184,6 +6546,7 @@ $("#importFile").addEventListener("change", e => {
       rebuildDepts(state.roles);
       normalizeRoles();
       setConnected(false);
+      forgetPendingWrites();
       /* the whole cast changed identity — conversation membership from the old
          chart means nothing against the new one, so an imported chart starts a
          conversation of its own rather than inheriting one */

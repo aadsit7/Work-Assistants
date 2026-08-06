@@ -1,9 +1,31 @@
 /**
  * ============================================================================
  *  PERSONA ASSISTANT — Google Apps Script backend
- *  (rev 10 — answers in sections, sources with substance, 2026-08-06)
+ *  (rev 11 — a role can be added and removed, 2026-08-06)
  *  Paste this whole file into your Sheet's Apps Script editor (replace Code.gs).
  * ============================================================================
+ *
+ *  CHANGED IN REV 11 (from rev 10)
+ *    - ADDING A ROLE NOW WORKS. savePersona opened no rows: a persona the
+ *      Sheet had never seen came back "No persona with id role…", which is
+ *      every role the app's Add a role button has ever made. It now creates
+ *      the row, keeping the id the app minted, on the parent's org chart and
+ *      in the department it was added to. Pass create:false for the old
+ *      behaviour. A save also un-archives a persona when asked (revive:true).
+ *    - REMOVING A ROLE NOW REACHES THE SHEET. New action deletePersona, a soft
+ *      delete like every other one here: Status becomes 'archived', the row and
+ *      its history stay, and its knowledge sources are archived with it. It
+ *      refuses while another active persona reports to it, because the chart is
+ *      drawn from ParentPersonaId and the subtree would vanish. Deleting
+ *      something already archived — or never filed — is a success, so the
+ *      client's retry can repeat it safely.
+ *    - THE COMPANY DETAILS ARE WRITABLE. New action saveOrg writes CompanyName,
+ *      Subtitle, PageHeading, IntroLine, AccentColorHex, Theme,
+ *      ShowReportingLines and CharacterAnimation back to the OrgCharts row.
+ *      They were editable in the app and stored nowhere, so background sync
+ *      put the old ones back within the minute. An absent field is left alone,
+ *      never blanked. config now also returns orgChartId, which saveOrg echoes
+ *      so the write lands in the row it was read from.
  *
  *  CHANGED IN REV 10 (from rev 9)
  *    - EVERY BRIEF NOW SPECIFIES ITS OWN OUTPUT. buildPrompt adds two
@@ -128,9 +150,10 @@
  *  automatically if the first call errors or times out.
  *
  *  WHAT THIS FILE DOES
- *    doPost   ping, chat, classify, config, savePersona, saveSetting,
- *             cleanup, voiceTests, voiceTestResult, runTests,
- *             history, transcript, renameConversation, deleteConversation
+ *    doPost   ping, chat, classify, config, savePersona, deletePersona,
+ *             saveOrg, saveSetting, cleanup, voiceTests, voiceTestResult,
+ *             runTests, history, transcript, searchConversations,
+ *             renameConversation, deleteConversation
  *    doGet    ping and config, so you can sanity-check it in a browser
  *    Rebuilds the system prompt from the Sheet and refuses the call if the
  *    device's fingerprint does not match — a stale brief never gets answered.
@@ -214,6 +237,8 @@ function doPost(e) {
     if (action === 'classify')        return json_(classify_(req));
     if (action === 'config')          return json_(getConfig_());
     if (action === 'savePersona')     return json_(savePersona_(req));
+    if (action === 'deletePersona')   return json_(deletePersona_(req));
+    if (action === 'saveOrg')         return json_(saveOrg_(req));
     if (action === 'saveSetting')     return json_(saveSetting_(req));
     if (action === 'cleanup')         return json_(cleanup_(req));
     if (action === 'voiceTests')      return json_(voiceTests_());
@@ -1409,6 +1434,10 @@ function getConfig_() {
 
   return {
     ok: true,
+    /* the row the company name and the appearance came from, echoed so a
+       saveOrg writes back into it rather than into whichever row happens to be
+       first when the write arrives */
+    orgChartId: chart.OrgChartId || '',
     company: chart.CompanyName || '',
     subtitle: chart.Subtitle || '',
     title: chart.PageHeading || '',
@@ -1436,18 +1465,42 @@ function savePersona_(req) {
     var sh = sheet_(TAB.personas);
     var head = headers_(sh);
     var idCol = head.indexOf('PersonaId');
+    if (idCol < 0) return { ok: false, error: 'The Personas tab has no PersonaId column.' };
     var vals = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues() : [];
 
     var rowIndex = -1;
-    for (var i = 0; i < vals.length; i++) if (vals[i][idCol] === p.id) { rowIndex = i + 2; break; }
-    if (rowIndex < 0) return { ok: false, error: 'No persona with id ' + p.id + '.' };
+    for (var i = 0; i < vals.length; i++) if (String(vals[i][idCol]) === String(p.id)) { rowIndex = i + 2; break; }
+
+    /* A persona the Sheet has never seen is a role just added in the app, and
+       the app owns the id — so this creates the row rather than refusing the
+       save. Refusing is what "Couldn't save … (No persona with id …)" was: the
+       one write the Add a role button exists to make, rejected every time.
+       Pass create:false to get the old behaviour back. */
+    var created = false;
+    if (rowIndex < 0) {
+      if (req.create === false) {
+        return { ok: false, code: 'NO_SUCH_PERSONA', error: 'No persona with id ' + p.id + '.' };
+      }
+      rowIndex = createPersonaRow_(sh, head, req, p);
+      created = true;
+      vals = sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues();
+    }
 
     // optimistic concurrency: another device may have saved since this one loaded
     var vCol = head.indexOf('RowVersion');
     var current = vCol >= 0 ? Number(vals[rowIndex - 2][vCol] || 1) : 1;
-    if (req.rowVersion && Number(req.rowVersion) !== current) {
+    if (!created && req.rowVersion && Number(req.rowVersion) !== current) {
       return { ok: false, code: 'CONFLICT', rowVersion: current,
                error: 'Another device saved this persona first. Reload before editing.' };
+    }
+
+    /* A save is also how a role comes back: archived is the only kind of delete
+       this file performs, so a client still holding the persona un-archives it
+       rather than writing into a row nothing will ever read. */
+    var stCol = head.indexOf('Status');
+    if (!created && stCol >= 0 && String(vals[rowIndex - 2][stCol] || 'active') !== 'active' && req.revive) {
+      sh.getRange(rowIndex, stCol + 1).setValue('active');
+      audit_(req, 'Personas', p.id, 'update', 'Status', vals[rowIndex - 2][stCol], 'active');
     }
 
     // Arrays come back from the client as arrays; the Sheet stores them as text.
@@ -1524,7 +1577,8 @@ function savePersona_(req) {
     var rebuilt = buildPrompt(personaFromSheet_(p.id));
     setCell_(sh, head, rowIndex, 'PromptHash', rebuilt.hash);
 
-    var out = { ok: true, version: newVersion, rowVersion: current + 1,
+    var out = { ok: true, personaId: p.id, created: created,
+                version: newVersion, rowVersion: current + 1,
                 promptHash: rebuilt.hash, missing: rebuilt.missing };
     /* a save that could not keep part of what it was given says so — the app
        shows it, rather than reporting a clean save over a partial one */
@@ -1535,6 +1589,63 @@ function savePersona_(req) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * Opens a Personas row for a persona the app has just added.
+ *
+ * The id comes from the client, unchanged: the app has already put the role in
+ * its chart, in the settings list and in the pane being edited, and minting a
+ * different one here would leave a row nothing on screen points at. Everything
+ * else is a default the caller's own field map then writes over — this exists
+ * to make the row addressable, not to fill it in.
+ *
+ * OrgChartId is inherited from the parent persona when there is one, and from
+ * the first active OrgChart otherwise, because a persona on no chart is
+ * invisible to getConfig_ and would look exactly like a save that vanished.
+ * Runs inside savePersona_'s script lock. Returns the new row's index.
+ */
+function createPersonaRow_(sh, head, req, p) {
+  var orgChartId = String(p.orgChartId || '').trim();
+  if (!orgChartId && p.parent) {
+    readTable_(TAB.personas).forEach(function (r) {
+      if (!orgChartId && String(r.PersonaId) === String(p.parent)) orgChartId = String(r.OrgChartId || '');
+    });
+  }
+  if (!orgChartId) {
+    var charts = readTable_(TAB.orgcharts).filter(active_);
+    orgChartId = charts.length ? String(charts[0].OrgChartId || '') : '';
+  }
+
+  var now = nowIso_();
+  var row = {
+    PersonaId:        p.id,
+    OrgChartId:       orgChartId,
+    DepartmentId:     p.dept || '',
+    ParentPersonaId:  p.parent || '',
+    Title:            p.title || 'New role',
+    Status:           'active',
+    Version:          1,
+    RowVersion:       1,
+    FidelityMode:     p.fidelityMode || setting_('default_fidelity_mode', 'strict'),
+    Language:         p.language || 'en-US',
+    VoiceEnabled:     'TRUE',
+    Verbosity:        'balanced',
+    ResponseFormat:   'prose',
+    ValidationStatus: 'unvalidated',
+    CreatedAt:        now,
+    UpdatedAt:        now,
+    CreatedByUserId:  req.userId || '',
+    UpdatedByUserId:  req.userId || ''
+  };
+  /* appended through the header we already hold rather than appendByHeader_,
+     so the row lands on the same sheet handle the caller goes on to write into
+     and getLastRow() below is certain to be the row just written */
+  sh.appendRow(head.map(function (h) { return row[h] !== undefined ? row[h] : ''; }));
+  SpreadsheetApp.flush();
+  forgetTable_(TAB.personas);
+  audit_(req, 'Personas', p.id, 'create', 'Title', '', row.Title);
+  return sh.getLastRow();
 }
 
 /* A source's identity, for matching what the client sent against rows already
@@ -1654,6 +1765,144 @@ function syncKnowledge_(req, personaId, sources) {
   });
 
   return { warnings: warnings };
+}
+
+/**
+ * Removes a persona from the app's chart, the same way every other delete in
+ * this file works: Status becomes 'archived' and getConfig_ stops shipping it.
+ * Nothing is erased — the Interactions and Messages rows this persona answered
+ * in still name it, and a hard delete would leave that history pointing at an
+ * id no row explains.
+ *
+ * Refused while another active persona reports to it, because the app draws its
+ * chart from ParentPersonaId and an orphaned subtree would simply disappear off
+ * it. The app blocks the same case in its own UI; this is the backstop for
+ * anything that reaches the action directly.
+ */
+function deletePersona_(req) {
+  var id = String((req && (req.personaId || (req.persona && req.persona.id))) || '').trim();
+  if (!id) return { ok: false, error: 'personaId is required.' };
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var rows = readTable_(TAB.personas);
+    var kids = rows.filter(function (r) {
+      return String(r.ParentPersonaId || '') === id && String(r.Status || 'active') === 'active';
+    });
+    if (kids.length) {
+      return { ok: false, code: 'HAS_REPORTS',
+               error: kids.length + ' role' + (kids.length === 1 ? '' : 's') +
+                      ' still report to this one. Move them first.' };
+    }
+
+    var sh = sheet_(TAB.personas);
+    var head = headers_(sh);
+    var idCol = head.indexOf('PersonaId'), stCol = head.indexOf('Status');
+    if (stCol < 0) return { ok: false, error: 'The Personas tab has no Status column.' };
+    var vals = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues() : [];
+
+    for (var i = 0; i < vals.length; i++) {
+      if (String(vals[i][idCol]) !== id) continue;
+      var row = i + 2;
+      var was = String(vals[i][stCol] || 'active');
+      /* Already gone is a success, not an error: a retried delete — the app
+         queues writes and repeats one it never saw an answer to — must not
+         come back as a failure the person has to read. */
+      if (was === 'archived') return { ok: true, personaId: id, alreadyArchived: true };
+      setCell_(sh, head, row, 'Status', 'archived');
+      setCell_(sh, head, row, 'UpdatedAt', nowIso_());
+      setCell_(sh, head, row, 'UpdatedByUserId', req.userId || '');
+      var vCol = head.indexOf('RowVersion');
+      if (vCol >= 0) sh.getRange(row, vCol + 1).setValue(Number(vals[i][vCol] || 1) + 1);
+      audit_(req, 'Personas', id, 'archive', 'Status', was, 'archived');
+      archiveKnowledgeFor_(req, id);
+      clearCache_();
+      return { ok: true, personaId: id };
+    }
+    /* Never in the Sheet at all — a role added and removed before its create
+       ever landed. Nothing to do, and nothing wrong. */
+    return { ok: true, personaId: id, alreadyArchived: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** The removed persona's sources go with it, archived rather than deleted. */
+function archiveKnowledgeFor_(req, personaId) {
+  try {
+    var sh = sheet_(TAB.knowledge);
+    var head = headers_(sh);
+    var pCol = head.indexOf('PersonaId'), sCol = head.indexOf('Status');
+    if (pCol < 0 || sCol < 0 || sh.getLastRow() < 2) return;
+    var vals = sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      if (String(vals[i][pCol]) !== String(personaId)) continue;
+      if (String(vals[i][sCol] || 'active') !== 'active') continue;
+      setCell_(sh, head, i + 2, 'Status', 'archived');
+      setCell_(sh, head, i + 2, 'UpdatedAt', nowIso_());
+    }
+  } catch (e) { logError_('archiveKnowledgeFor_', e); }
+}
+
+/**
+ * The company name, the headings, the theme and the two chart toggles, written
+ * back to the OrgCharts row they came from.
+ *
+ * Before this they were editable in Settings and stored nowhere: the app read
+ * them from the Sheet on every background sync, so renaming the company held
+ * for as long as it took the next tick to arrive and then silently snapped
+ * back. Same shape as savePersona_ — an absent field is left alone rather than
+ * blanked, so a client that sends one of them cannot wipe the rest.
+ */
+function saveOrg_(req) {
+  var o = (req && req.org) || {};
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = sheet_(TAB.orgcharts);
+    var head = headers_(sh);
+    var idCol = head.indexOf('OrgChartId');
+    var stCol = head.indexOf('Status');
+    var vals = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues() : [];
+
+    var rowIndex = -1;
+    var wanted = String(o.id || req.orgChartId || '').trim();
+    for (var i = 0; i < vals.length; i++) {
+      var isActive = stCol < 0 || !vals[i][stCol] || String(vals[i][stCol]) === 'active';
+      if (wanted) { if (String(vals[i][idCol]) === wanted) { rowIndex = i + 2; break; } }
+      else if (isActive) { rowIndex = i + 2; break; }
+    }
+    if (rowIndex < 0) return { ok: false, error: 'No org chart row to save into. Check the OrgCharts tab.' };
+
+    var bool = function (v) { return v === undefined || v === null ? undefined : (v ? 'TRUE' : 'FALSE'); };
+    var map = {
+      CompanyName:        o.company,
+      Subtitle:           o.subtitle,
+      PageHeading:        o.title,
+      IntroLine:          o.blurb,
+      AccentColorHex:     o.accent,
+      Theme:              o.appearance,
+      ShowReportingLines: bool(o.lines),
+      CharacterAnimation: bool(o.motion)
+    };
+    var wrote = 0;
+    Object.keys(map).forEach(function (k) {
+      var c = head.indexOf(k);
+      if (c < 0 || map[k] === undefined || map[k] === null) return;
+      var before = vals[rowIndex - 2][c];
+      if (String(before) === String(map[k])) return;
+      sh.getRange(rowIndex, c + 1).setValue(map[k]);
+      audit_(req, 'OrgCharts', String(vals[rowIndex - 2][idCol] || ''), 'update', k, before, map[k]);
+      wrote++;
+    });
+    setCell_(sh, head, rowIndex, 'UpdatedAt', nowIso_());
+    setCell_(sh, head, rowIndex, 'UpdatedByUserId', req.userId || '');
+    clearCache_();
+    return { ok: true, orgChartId: String(vals[rowIndex - 2][idCol] || ''), fieldsWritten: wrote };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function saveSetting_(req) {
