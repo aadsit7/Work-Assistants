@@ -195,6 +195,12 @@ filling everything else.
   there. The state persists per browser.
 - **The conversation fills the window.** The capped, centred column is gone —
   a wide window gave you a narrow document with two empty margins.
+- **The accent still yours, still readable.** The selected row in the rail is a
+  solid block of your accent with white text on it, and several of the accents
+  on offer are far too light to carry white — on the orange it reads at 2.5:1,
+  well under the 4.5:1 ordinary text needs. Rather than flip that one row's
+  label to black, the fill is darkened just far enough to carry white and no
+  further, so the colour you picked is still the colour you see.
 
 ## The side menu
 
@@ -271,6 +277,18 @@ without fighting a 68%-wide balloon for room, and what makes a thread with four
 people in it readable as a transcript. Runs by the same person inside five
 minutes collapse into the first row's header, so a signed transcript doesn't
 become a stack of name tags; a collapsed row shows its own time on hover.
+
+**Nothing the app says is signed with a persona's name.** A failed request
+carries the persona's id so a retry knows who to ask again, but that id is
+routing, not authorship — putting "Couldn't get a reply" under someone's face
+would attribute words to them they never said, in the one place a reader is
+least able to tell the difference. Failures and system notes render unsigned,
+and they end a run, so the answer that follows one always re-introduces its
+author.
+
+A **date divider** marks each day the conversation ran across, labelled with
+the day itself — the buckets in the side menu ("Previous 7 days") are right for
+sorting a list into piles and wrong on a divider, which marks one specific day.
 
 ## What an answer looks like
 

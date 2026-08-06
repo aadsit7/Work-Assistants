@@ -11,12 +11,11 @@
   --bg:#FFFFFF; --wash:#FFFFFF; --card:#FFFFFF; --group:#FFFFFF; --field:#F1F1F3;
   --label:#1D1C1D; --label2:#616061; --label3:#868686;
   --sep:rgba(29,28,29,.13); --line:rgba(29,28,29,.2);
-  --accent:#1264A3; --danger:#E01E5A; --go:#007A5A;
+  --accent:#1264A3; --sel:#1264A3; --danger:#E01E5A; --go:#007A5A;
   --nav:#FFFFFF;
   --hover:rgba(29,28,29,.04);
   --shadow:0 1px 3px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.08);
   --shadow-lift:0 4px 12px rgba(0,0,0,.12), 0 12px 28px rgba(0,0,0,.16);
-  --r:8px;
   --railW:clamp(260px,20vw,300px);
   --spring:cubic-bezier(.32,.72,0,1);
   --sans:"Lato",-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
@@ -72,6 +71,9 @@ body::before{ content:none }
 button{font-family:inherit; color:inherit; background:none; border:0; padding:0; cursor:pointer}
 input,textarea{font-family:inherit}
 :focus-visible{outline:2.5px solid var(--accent); outline-offset:3px; border-radius:8px}
+/* the rail and the nav are dark in both themes, and a dark-blue accent ring on
+   aubergine is not a ring anyone can see */
+.side :focus-visible,.nav :focus-visible{outline-color:#FFFFFF; outline-offset:-1px}
 
 /* ---------- nav ----------
    The top bar belongs to the workspace, not to the page under it: it runs
@@ -185,7 +187,7 @@ body.rail-off .navTitle{display:flex}
 }
 .cLabel{
   padding:9px 16px 3px;font-size:10.5px;font-weight:700;letter-spacing:.06em;
-  text-transform:uppercase;color:rgba(255,255,255,.42);
+  text-transform:uppercase;color:rgba(255,255,255,.58);
 }
 .cRow{
   position:relative;display:flex;align-items:center;gap:8px;width:100%;
@@ -193,12 +195,12 @@ body.rail-off .navTitle{display:flex}
   transition:background .1s ease;
 }
 .cRow:hover{background:var(--sb-hover)}
-.cRow.on{background:var(--accent);color:#fff}
+.cRow.on{background:var(--sel);color:#fff}
 /* the cast, stacked — a conversation that changed hands says so at a glance */
 .cFaces{display:flex;flex:none;align-items:center}
 .cFaces .avatar{width:20px;height:20px;display:block;border-radius:4px}
 .cFaces .avatar + .avatar{margin-left:-7px;box-shadow:0 0 0 1.5px var(--sb)}
-.cRow.on .cFaces .avatar + .avatar{box-shadow:0 0 0 1.5px var(--accent)}
+.cRow.on .cFaces .avatar + .avatar{box-shadow:0 0 0 1.5px var(--sel)}
 .cMore{
   width:20px;height:20px;margin-left:-7px;border-radius:4px;flex:none;display:grid;place-items:center;
   background:rgba(255,255,255,.2);color:#fff;font-size:8.5px;font-weight:700;
@@ -213,10 +215,10 @@ body.rail-off .navTitle{display:flex}
 /* The second line is detail, not identity: it stays out of the way until the
    row is the one you are in or the one you are pointing at. */
 .cMeta{
-  display:block;font-size:11px;color:rgba(255,255,255,.42);margin-top:0;
+  display:block;font-size:11px;color:rgba(255,255,255,.58);margin-top:0;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.cRow:hover .cMeta{color:rgba(255,255,255,.6)}
+.cRow:hover .cMeta{color:rgba(255,255,255,.72)}
 .cRow.on .cMeta{color:rgba(255,255,255,.8)}
 .cMeta mark{background:rgba(255,255,255,.28);color:#fff;border-radius:3px}
 .cSpin{
@@ -249,12 +251,11 @@ body.rail-off .navTitle{display:flex}
 .cEdit input:focus{outline:2px solid rgba(255,255,255,.5);outline-offset:0}
 .sideNote{padding:14px 18px;font-size:12.5px;color:var(--sb-dim);line-height:1.5}
 .sideNote b{display:block;color:var(--sb-strong);font-weight:700;margin-bottom:3px}
-.sideFoot{padding:8px 18px 2px;font-size:11px;color:rgba(255,255,255,.38);line-height:1.45}
-.railBar{display:none}
+.sideFoot{padding:8px 18px 2px;font-size:11px;color:rgba(255,255,255,.58);line-height:1.45}
 .outline{padding:1px 0 2px}
 .oLabel{
   padding:9px 16px 3px;font-size:10.5px;font-weight:700;letter-spacing:.06em;
-  text-transform:uppercase;color:rgba(255,255,255,.42);
+  text-transform:uppercase;color:rgba(255,255,255,.58);
 }
 .oRow{
   position:relative;display:flex;align-items:center;gap:8px;width:100%;
@@ -267,7 +268,7 @@ body.rail-off .navTitle{display:flex}
   flex:1;min-width:0;font-size:13.5px;font-weight:400;letter-spacing:0;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.oRow.is-selected{background:var(--accent);color:#fff}
+.oRow.is-selected{background:var(--sel);color:#fff}
 .oRow.is-selected .oTitle{font-weight:700}
 .oBadge{
   min-width:18px;height:18px;padding:0 5px;border-radius:9px;flex:none;
@@ -554,16 +555,6 @@ button.row:active{background:var(--field)}
 .sw:active{transform:scale(.88)}
 .sw.on::after{content:"";position:absolute;inset:-5px;border-radius:50%;border:2.5px solid var(--label);opacity:.85}
 /* editor chips */
-.editChips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px}
-.editChip{
-  display:flex;align-items:center;gap:6px;font-size:13.5px;padding:6px 8px 6px 12px;border-radius:999px;
-  background:var(--field);
-}
-.editChip button{width:17px;height:17px;border-radius:50%;background:var(--label3);color:var(--card);font-size:11px;line-height:1;display:grid;place-items:center}
-.addRow{display:flex;gap:8px}
-.addRow input{flex:1;border:0;background:var(--field);border-radius:12px;padding:11px 12px;font-size:15px;color:var(--label)}
-.addRow input:focus{outline:2px solid color-mix(in srgb,var(--accent) 60%,transparent)}
-.addRow button{padding:0 16px;border-radius:12px;background:var(--accent);color:#fff;font-weight:600;font-size:15px}
 /* knowledge sources: a list of links and pasted text, each editable in place */
 .knList{display:flex;flex-direction:column;gap:7px;margin-bottom:10px}
 .knRow{display:flex;align-items:flex-start;gap:10px;background:var(--field);border-radius:12px;padding:10px 11px}
@@ -639,11 +630,18 @@ body.dark .pill.ok{color:#5FD97C}
 .promptView{margin-top:10px;background:var(--field);border-radius:12px;padding:12px;
   font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.55;
   color:var(--label2);white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto}
-.notice{border-radius:16px;padding:13px 15px;font-size:13.5px;line-height:1.5;margin-bottom:4px}
-.notice.warn{background:color-mix(in srgb,var(--danger) 11%,transparent);color:var(--danger)}
+/* These sit directly in #thread, which has no side padding of its own — every
+   other child of the thread insets itself, and a notice that didn't would run
+   edge to edge. */
+.notice{
+  border-radius:8px;padding:11px 14px;font-size:13.5px;line-height:1.5;
+  margin:0 20px 8px;flex:none;
+}
+.notice.warn{background:color-mix(in srgb,var(--danger) 10%,transparent);color:var(--danger)}
 .notice.info{background:var(--field);color:var(--label2)}
 .notice b{display:block;margin-bottom:3px;color:inherit}
-.notice button{color:var(--accent);font-weight:600;font-size:13.5px;margin-top:7px}
+.notice button{color:var(--accent);font-weight:700;font-size:13.5px;margin-top:7px}
+.notice button:hover{text-decoration:underline}
 
 /* ---------- connection / boot ---------- */
 .connDot{
@@ -760,10 +758,16 @@ body.no-motion .spinner{animation-duration:1.6s}
   font-size:15px;line-height:1.46;letter-spacing:0;
   white-space:pre-wrap;overflow-wrap:anywhere;color:var(--label);
 }
-.msg.err .bubble{
+/* An error is unsigned, so it indents itself to the same left edge the signed
+   rows' words start from — it belongs to the conversation without pretending
+   to be part of it. */
+.msg.err{padding-left:64px}
+.errBar{
+  flex:1;min-width:0;max-width:860px;padding:8px 12px;border-radius:0 6px 6px 0;
   color:var(--danger);background:color-mix(in srgb,var(--danger) 8%,transparent);
-  border-left:3px solid var(--danger);border-radius:0 6px 6px 0;padding:8px 12px;
+  border-left:3px solid var(--danger);
 }
+.msg.err .bubble{color:inherit}
 /* the typing indicator is a row like any other, so nothing jumps when the
    answer lands in its place */
 .msg.typing{padding-top:6px}
@@ -858,6 +862,9 @@ body.no-motion .spinner{animation-duration:1.6s}
 .composer:focus-within{border-color:var(--label3);box-shadow:0 0 0 1px var(--label3)}
 .card.chatting .composer{display:flex}
 .composerBox{flex:1;min-width:0;position:relative}
+/* height/max-height must match COMPOSER_H / COMPOSER_MAX in the script — the
+   box is resized in JS on every keystroke, so whatever is written here is only
+   the value it starts at before the first one. */
 .composer textarea{
   width:100%;display:block;border:0;background:none;border-radius:0;padding:8px 12px;
   font-size:15px;line-height:1.4;color:var(--label);resize:none;height:37px;max-height:180px;
@@ -931,8 +938,8 @@ body.no-motion .spinner{animation-duration:1.6s}
    and not an alarming error either. */
 .msg.note{justify-content:center}
 .msg.note .bubble{background:none;color:var(--label3);font-size:12.5px;padding:2px 8px}
-/* jump-to-message highlight from history search */
-.msg.hl .bubble{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 55%,transparent)}
+/* a system note is not a message you can act on, so it doesn't light up */
+.msg.note:hover,.msg.err:hover{background:none}
 
 /* ---------- who is answering ----------
    A conversation can be handed to another persona without losing the thread.
@@ -1180,6 +1187,9 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
      shrinks, the row loses its side padding, and the run-collapsing does the
      rest of the work. */
   .msg{padding:5px 14px;gap:7px}
+  /* keep the unsigned error lined up with where the signed rows' words start:
+     side padding + avatar + gap, all three of which shrink here */
+  .msg.err{padding-left:51px}
   .who{width:30px}
   .who .avatar{width:30px;height:30px;border-radius:7px}
   .whoName{font-size:14.5px}
@@ -1977,8 +1987,12 @@ function applyTokenInput(raw){
     const tok = (hash.get("token") || qs.get("token") || "").trim();
     const ep  = (hash.get("endpoint") || qs.get("endpoint") || "").trim();
     if(!tok && !ep) return;
-    /* endpoint first: applyTokenInput on a URL may carry its own ?token= */
-    if(ep) applyTokenInput(ep);
+    /* Endpoint first, because applyTokenInput on a URL may carry its own
+       ?token= that an explicit &token= should then win over. Guarded on the
+       URL shape: applyTokenInput treats anything that is not an Apps Script
+       URL as a bare token, so an &endpoint= holding a typo would quietly
+       become the credential and every later request would send it. */
+    if(ep && /^https:\/\/script\.google\.com\//.test(ep)) applyTokenInput(ep);
     if(tok) setToken(tok);
     ["token", "endpoint"].forEach(k => { hash.delete(k); qs.delete(k); });
     const h = hash.toString(), s = qs.toString();
@@ -2418,11 +2432,56 @@ function renderChart(){
   if(outline !== lastOutlineHTML){ $("#outline").innerHTML = outline; lastOutlineHTML = outline; }
   autoFit();
 }
+/* =================================================================
+   AN ACCENT YOU CAN PICK IS NOT AN ACCENT YOU CAN FILL WITH
+
+   The rail's selected row is a solid block of the accent with white
+   text on it, and the accent is something the user chooses. Chosen
+   for a button on a white page, several of them are far too light to
+   carry white text: on #F08C00 white reads at 2.5:1 and on #28A745 at
+   3.1:1, both well under the 4.5:1 that ordinary text needs.
+
+   Flipping the label to black on those would make one row in the rail
+   look unlike every other row in it. So the fill is darkened instead —
+   in 5% steps toward black, stopping at the first one that carries
+   white, and no further. #1264A3 passes untouched; #0A84FF gives up
+   15% and is still recognisably itself.
+================================================================= */
+const RGB_RE = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i;
+function toRGB(hex){
+  const m = RGB_RE.exec(String(hex || "").trim());
+  return m ? [1, 2, 3].map(i => parseInt(m[i], 16)) : null;
+}
+function relLuminance(rgb){
+  const ch = v => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  return 0.2126 * ch(rgb[0]) + 0.7152 * ch(rgb[1]) + 0.0722 * ch(rgb[2]);
+}
+/* contrast of white text against a background of this luminance */
+const whiteOn = L => 1.05 / (L + 0.05);
+const fillCache = new Map();
+function readableFill(hex){
+  if(fillCache.has(hex)) return fillCache.get(hex);
+  const rgb = toRGB(hex);
+  let out = hex;
+  if(rgb){
+    for(let k = 0; k <= 100; k += 5){
+      const c = rgb.map(v => Math.round(v * (100 - k) / 100));
+      if(whiteOn(relLuminance(c)) >= 4.5){
+        out = "#" + c.map(v => v.toString(16).padStart(2, "0")).join("");
+        break;
+      }
+    }
+  }
+  fillCache.set(hex, out);
+  return out;
+}
+
 function applyChrome(){
   document.body.classList.toggle("dark", state.appearance === "dark");
   document.body.classList.toggle("no-lines", !state.lines);
   document.body.classList.toggle("no-motion", !state.motion);
   document.documentElement.style.setProperty("--accent", state.accent);
+  document.documentElement.style.setProperty("--sel", readableFill(state.accent));
   $("#navCompany").textContent = state.company;
   $("#navSub").textContent = state.subtitle;
   $("#wsCompany").textContent = state.company;
@@ -3583,6 +3642,19 @@ function startFresh(key){
   if(!(threads[key] || []).length){ renderThread(); return key; }
   return newChat(root);
 }
+/* The composer's collapsed height and its ceiling. The element is resized in
+   JS on every keystroke, so these two numbers and the ones in the .composer
+   textarea rule have to agree — a CSS height the element never adopts and a
+   max-height it never reaches are both just dead declarations. They live here
+   because JS is the half that wins. */
+const COMPOSER_H = 37, COMPOSER_MAX = 180;
+function sizeComposer(el){
+  if(!el) return;
+  el.style.height = COMPOSER_H + "px";
+  el.style.height = Math.min(el.scrollHeight, COMPOSER_MAX) + "px";
+}
+const resetComposerHeight = el => { if(el) el.style.height = COMPOSER_H + "px"; };
+
 function threadNotices(r){
   const built = buildPrompt(r);
   const pin = pinned[pinKey(convId, r.id)];
@@ -3599,16 +3671,20 @@ function threadNotices(r){
   }
   return html;
 }
-/* o.speakers — tag replies with who wrote them (set once a conversation has
-   more than one persona in it). o.reask — this hand-off is the newest thing in
-   the thread and there is a question to put to the new persona.
+/* o.cont — this message continues a run by the same author, so it drops its
+   header. o.fallback — the persona to sign an assistant message that carries
+   no speaker of its own (an old row from before speakers were recorded).
+   o.reask — this hand-off is the newest thing in the thread and there is a
+   question to put to the new persona.
    Never passed straight to .map(): the second argument would be the index. */
 function msgHTML(m, o){
   o = o || {};
   if(m.switchTo){
     const r = roleById(m.switchTo);
-    /* a removed role still leaves its marker behind — every message keeps one
-       node, which is what History's jump-to-message index counts on */
+    /* A removed role still leaves its marker behind. Every message renders
+       exactly one node, so the thread's children stay in step with
+       threads[convId] — which is what the run-collapsing pass above reads
+       back, and what any later jump-to-a-message would need. */
     if(!r) return `<div class="msg note"><div class="bubble">${esc(displayText(m))}</div></div>`;
     return `<div class="msg handoff" style="--tint:${deptOf(r).tint}"><div class="handoffPill">
         ${avatarSVG(r, "", 22)}
@@ -3627,6 +3703,12 @@ function msgHTML(m, o){
     : `<div class="bubble">${esc(displayText(m))}</div>`;
   /* A note is the app talking, not a person — it stays centred and unsigned. */
   if(m.note) return `<div class="msg note">${bubble}</div>`;
+  /* So is a failure. A timed-out request carries the persona's id so the retry
+     knows who to ask again, but that id is routing, not authorship: signing
+     "Couldn't get a reply" with a name and a face puts words in a persona's
+     mouth that it never said, in the one place a reader is least able to tell
+     the difference. Errors get the row without the signature. */
+  if(m.error) return `<div class="msg err"><div class="errBar">${bubble}</div></div>`;
   /* =============================================================
      EVERY MESSAGE IS SIGNED
 
@@ -3651,7 +3733,7 @@ function msgHTML(m, o){
              : speaker ? avatarSVG(speaker, "", 36) : meAvatar(36);
   const time = m.at ? fmtTime(m.at) : "";
   return `<div class="msg ${kind} ${tone} tagged${o.cont ? " cont" : ""}"${tint ? ` style="--tint:${tint}"` : ""}>
-      <span class="who">${face}<span class="hoverTime">${esc(time)}</span></span>
+      <span class="who">${face}<span class="hoverTime">${esc(m.at ? fmtTimeShort(m.at) : "")}</span></span>
       <div class="said">
         <span class="mHead"><span class="whoName">${esc(name)}</span><span class="mTime">${esc(time)}</span></span>
         ${bubble}
@@ -3667,10 +3749,13 @@ function meAvatar(size){
     <path d="M50 57c-14 0-24 8-24 17v6h48v-6c0-9-10-17-24-17Z" fill="#fff" opacity=".95"/>
   </svg>`;
 }
-/* Which run of messages this one belongs to. A handoff marker or a note ends
-   the run, so the next real message always re-introduces its author. */
+/* Which run of messages this one belongs to. Anything that doesn't render as a
+   signed row — a handoff marker, a note, a failure — ends the run, so the next
+   real message always re-introduces its author. An error carries a speaker id
+   for routing, and treating that as authorship here would silently swallow the
+   header of the answer that follows it. */
 function authorKey(m){
-  if(m.switchTo || m.note) return null;
+  if(m.switchTo || m.note || m.error) return null;
   return m.role === "user" ? "me" : "p:" + (m.speaker || "");
 }
 const RUN_GAP_MS = 5 * 60 * 1000;
@@ -3706,18 +3791,28 @@ function renderThread(){
   const started = t[0]?.at || Date.now();
   const lastIdx = t.length - 1;
   const asked = t.some(m => m.role === "user" && !m.error);
-  /* Runs of one speaker collapse into one signed header, so a five-message
-     answer is one name and not five. */
-  let prevKey = null, prevAt = 0;
+  /* Two passes in one: a divider wherever the day changes, and runs of one
+     speaker collapsed into a single signed header so a five-message answer is
+     one name and not five. A day boundary always ends a run — the first
+     message of a morning re-introduces whoever is speaking, however recently
+     they last spoke. */
+  let prevKey = null, prevAt = 0, prevDay = null;
   const rows = t.map((m, i) => {
+    const at = m.at || started;
+    const day = startOfDay(at);
+    let divider = "";
+    if(day !== prevDay){
+      divider = `<div class="stamp"><span>${esc(dayDivider(at))}</span></div>`;
+      prevDay = day;
+      prevKey = null;
+    }
     const k = authorKey(m);
-    const cont = !!k && k === prevKey && (m.at || 0) - prevAt < RUN_GAP_MS;
-    prevKey = k; if(k) prevAt = m.at || prevAt;
-    return msgHTML(m, { cont, fallback: selectedId, reask: i === lastIdx && asked && !blocked });
+    const cont = !!k && k === prevKey && at - prevAt < RUN_GAP_MS;
+    prevKey = k; if(k) prevAt = at;
+    return divider + msgHTML(m, { cont, fallback: selectedId, reask: i === lastIdx && asked && !blocked });
   }).join("");
   box.innerHTML =
     threadNotices(r) +
-    `<div class="stamp"><span>${esc(dayGroup(started))}</span></div>` +
     `<div class="clearBar"><button data-clear>Start a new conversation</button></div>` +
     rows +
     (pending.has(convId) ? `<div class="msg from typing"><span class="who">${avatarSVG(r, "", 36)}</span><div class="said"><div class="dots"><i></i><i></i><i></i></div></div></div>` : "");
@@ -3728,9 +3823,15 @@ function renderThread(){
 /* The cast bar: everyone in this conversation, the current answerer marked,
    one tap to hand the thread to any of them. It is the whole feature in one
    row — who you are talking to, who else is here, and how to add someone. */
-function renderCast(){
+/* Everyone in this conversation, with whoever is on screen guaranteed to be in
+   it — you are talking to them whether or not they have answered yet. */
+function currentCast(){
   const cast = castOf(convId);
   if(cast.indexOf(selectedId) < 0 && roleById(selectedId)) cast.unshift(selectedId);
+  return cast;
+}
+function renderCast(){
+  const cast = currentCast();
   $("#castRow").innerHTML = cast.map(id => {
     const r = roleById(id);
     return `<button class="castChip ${id === selectedId ? "on" : ""}" style="--tint:${deptOf(r).tint}"
@@ -3871,7 +3972,7 @@ async function sendTo(key, roleId, text, src){
 function sendMessage(text){
   sendTo(convId, selectedId, text, {
     input: $("#composerInput"),
-    reset(){ $("#composerInput").style.height = "41px"; clearMainGhost(); }
+    reset(){ resetComposerHeight($("#composerInput")); clearMainGhost(); }
   });
 }
 
@@ -3883,6 +3984,11 @@ function renderCard(){
   $("#cardAvatar").innerHTML = avatarSVG(r, "", 44);
   $("#cardDept").textContent = d.name;
   $("#cardTitle").textContent = r.title;
+  /* The facepile lives in the header, which is on screen on both tabs — so it
+     is this function's to keep current, not renderThread's. Switching persona
+     while reading a brief used to leave the previous conversation's members
+     sitting above it. */
+  renderFacepile(currentCast());
   const block = (label, text) => `<div class="field"><h3>${label}</h3><p>${esc(text || "—")}</p></div>`;
   /* A link is a link here too — the card is where you check what a persona is
      working from, and a source you can't open is one you can't check. */
@@ -3950,7 +4056,7 @@ function selectRole(id, opts){
   Ambient.refreshLang();   // ambient keeps running; the restart picks up this persona's locale
   renderAmbient();
   const input = $("#composerInput");
-  if(!opts.keepDraft){ input.value = ""; input.style.height = "41px"; clearMainGhost(); }
+  if(!opts.keepDraft){ input.value = ""; resetComposerHeight(input); clearMainGhost(); }
   input.placeholder = "Message " + r.title;
   setTab(tab);
   if(innerWidth <= 900) showPane("chat");
@@ -4809,8 +4915,7 @@ $("#thread").addEventListener("click", e => {
 });
 $("#composerInput").addEventListener("input", e => {
   const el = e.target;
-  el.style.height = "41px";
-  el.style.height = Math.min(el.scrollHeight, 124) + "px";
+  sizeComposer(el);
   refreshSendUI();
   /* manual typing while dictating: keep every keystroke, move the insertion
      point to the caret, and let the next result land there. Any manual edit
@@ -4897,8 +5002,7 @@ function micNotice(msg){
 }
 function syncComposer(){
   const el = $("#composerInput");
-  el.style.height = "41px";
-  el.style.height = Math.min(el.scrollHeight, 124) + "px";
+  sizeComposer(el);
   refreshSendUI();
 }
 /* The ghost mirrors the textarea so ranges can be styled where a textarea
@@ -5167,7 +5271,7 @@ if(Speech.supported()){
    The Team pane is the org outline that used to be the whole rail —
    it starts a conversation, where the Chats pane returns to one.
 ================================================================= */
-const sideState = { pane:"chats", q:"", hits:null, hitsFor:"", editing:null, confirming:null, loading:false, error:"", sections:{ chats:true, team:true } };
+const sideState = { q:"", hits:null, hitsFor:"", editing:null, confirming:null, loading:false, error:"", sections:{ chats:true, team:true } };
 try{
   const saved = JSON.parse(localStorage.getItem("pa_sections") || "null");
   if(saved && typeof saved === "object") Object.assign(sideState.sections, saved);
@@ -5196,14 +5300,14 @@ function toggleMenu(){
   $("#menuBtn").setAttribute("aria-expanded", String(!off));
   if(!off) renderSide();
 }
-/* Both lists are on screen at once now, so "which pane" stopped being a
-   question — a section is open or collapsed, and that is all. setSidePane
-   keeps its name and its callers: asking for a pane opens that section and
-   brings it into view rather than hiding the other one. */
+/* Both lists are on screen at once, so "which pane is showing" stopped being a
+   question the app has to answer — a section is open or collapsed, and that is
+   all the state there is. */
+const SECTIONS = ["chats", "team"];
 const SECT_KEY = "pa_sections";
 function sectionOpen(name){ return sideState.sections[name] !== false; }
 function applySections(){
-  ["chats", "team"].forEach(name => {
+  SECTIONS.forEach(name => {
     const open = sectionOpen(name);
     const sect = $("#sect" + name[0].toUpperCase() + name.slice(1));
     const disc = $(`.sectDisc[data-sect="${name}"]`);
@@ -5213,12 +5317,15 @@ function applySections(){
   try{ localStorage.setItem(SECT_KEY, JSON.stringify(sideState.sections)); }catch(e){}
 }
 function toggleSection(name){
+  if(SECTIONS.indexOf(name) < 0) return;
   sideState.sections[name] = !sectionOpen(name);
   applySections();
 }
-function setSidePane(pane){
-  sideState.pane = pane;
-  if(pane){ sideState.sections[pane] = true; applySections(); }
+/* Make sure a section is open, then draw the list. Boot uses it to guarantee
+   the conversations are showing however the last session left them. */
+function openSection(name){
+  if(SECTIONS.indexOf(name) >= 0) sideState.sections[name] = true;
+  applySections();
   renderSide();
 }
 
@@ -5233,6 +5340,18 @@ function dayGroup(ts){
   return new Date(ts).toLocaleDateString([], { month:"long", year:"numeric" });
 }
 const fmtTime = ts => new Date(ts).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
+/* The same time without its meridiem, for the 36px gutter a collapsed row
+   reveals it in: "10:45 PM" does not fit there, and a clipped timestamp is
+   worse than a short one. Locales that don't use AM/PM come back unchanged. */
+const fmtTimeShort = ts => fmtTime(ts).replace(/\s*[AP]\.?\s?M\.?$/i, "").trim();
+/* The label on a day's divider. The buckets dayGroup returns are right for
+   sorting a list of conversations into piles and wrong on a divider, which
+   marks one specific day — "Previous 7 days" is not a date. */
+function dayDivider(ts){
+  const g = dayGroup(ts);
+  if(g === "Today" || g === "Yesterday") return g;
+  return new Date(ts).toLocaleDateString([], { weekday:"long", month:"long", day:"numeric" });
+}
 function whenLabel(ts){
   const g = dayGroup(ts);
   return g === "Today" ? fmtTime(ts)
@@ -6994,7 +7113,7 @@ async function boot(){
   refreshAmbient();
   applyChrome();
   renderChart();
-  setSidePane("chats");
+  openSection("chats");
   /* Land on a new conversation with the person at the top, not inside the last
      one that happened to be newest — reopening someone else's finished thread
      is not what opening the app means. The history is one click away in the
