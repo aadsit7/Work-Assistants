@@ -204,6 +204,32 @@ When a reply arrives without a marker, the spoken fallback reads the Answer
 section only. The restatement and the source list are dropped, because
 "Question. Sources." is not a thing anyone says.
 
+## Settings is full screen on a desktop
+
+Settings used to open the same way everywhere: a 560×760 card floating over the
+page, one column running down it. That is the right shape for flipping a toggle
+on a phone and the wrong one for adding a role, where a brief is two identity
+fields, six long ones and a knowledge list — about one and a half of which fit
+on screen at a time. You wrote a persona by scrolling a slot.
+
+On a desktop or in a browser window wider than 900px it now takes the whole
+screen and spends the width on making sections visible rather than wide:
+
+- **The main pane tiles.** Company, Appearance, every team with its **Add a
+  role** button, Chat, Voice and Configuration lay out in up to three columns,
+  so the whole of the org is on screen at once and adding a role to Support
+  doesn't mean scrolling past Legal to find it.
+- **The role editor splits.** The mark, the voice and **Remove this role** sit
+  in a narrow left column; the brief opens across the rest as a board of cards —
+  Personality, Context and Task on one row, the knowledge list full width under
+  them, Outcome, Hard rules and Out of scope on the next. Every field of a
+  persona is legible at a glance, and the long fields are twice as tall.
+- **The content column caps at 1520px** and centres, so a 27-inch display gets
+  three comfortable columns rather than one stretched to the bezels.
+
+Below 901px nothing changes: the sheet still rises from the bottom as a 94dvh
+drawer with one column in it, pixel for pixel what it was.
+
 ## Knowledge sources: links and text, not just labels
 
 Settings → a persona → **Knowledge sources** is where a persona's reference

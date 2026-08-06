@@ -427,6 +427,14 @@ button.row:active{background:var(--field)}
 .row input.text:focus{outline:none}
 .row.col{display:block;padding:14px}
 .row.col .lab{font-size:11px;font-weight:700;letter-spacing:.085em;text-transform:uppercase;color:var(--label3);margin-bottom:8px}
+/* Wrappers the desktop full-screen settings layout lays out against. Below
+   901px they are transparent — plain blocks, or absent from the box tree
+   entirely — so the phone sheet renders exactly as it always has. */
+.sect,.roleGrid,.tile{display:block}
+.briefHead{display:contents}
+/* display:contents hides the box but not the tree, so :last-child still
+   lands inside the wrapper — put the divider back that it takes away */
+.briefHead > .row:last-child{border-bottom:.5px solid var(--sep)}
 .ta{
   width:100%;border:0;background:var(--field);border-radius:12px;padding:11px 12px;resize:vertical;
   font-size:15px;line-height:1.45;color:var(--label);min-height:78px;
@@ -897,6 +905,93 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
    tree overflows, so scrolling still starts at the true edge. */
 .chartHost .chartScroll{display:flex}
 .chartHost .tree{margin:auto}
+
+/* =================================================================
+   SETTINGS, FULL SCREEN ON DESKTOP
+
+   Settings was a 560×760 card with a single column running down it.
+   That is the right shape for flipping a toggle on a phone and the
+   wrong shape for writing a persona: a brief is two identity fields,
+   six long ones and a knowledge list, and in a window that size you
+   can hold about one and a half of them on screen at once. Adding a
+   role meant scrolling a slot and remembering what was above it.
+
+   On a desktop viewport the sheet now takes the whole screen and
+   spends the width on making sections visible rather than wide. The
+   main pane tiles its sections into columns, so every team, the
+   company fields, the connection and the configuration actions are
+   all on screen together. The role editor puts identity and the
+   destructive action down a narrow left column and opens the brief
+   across the rest as a board of cards — each field its own card, the
+   knowledge list full width beneath them.
+
+   Nothing here reaches below 901px: the wrappers this leans on are
+   transparent at phone widths, and the sheet still rises from the
+   bottom as a 94dvh drawer.
+================================================================= */
+@media (min-width:901px){
+  #sheet{
+    inset:0;width:auto;height:auto;max-width:none;border-radius:0;
+    transform:scale(1.02);
+  }
+  #sheet.on{transform:none}
+  /* at this size the bar reads as a page header, not a card's title strip */
+  #sheet .sheetNav{min-height:64px;padding:12px 26px}
+  #sheet .sheetNav .t{font-size:19px}
+  #sheet .navAct{font-size:15.5px;min-width:96px}
+  /* Wide, but not edge-to-edge on a 27-inch display: the content column caps
+     out and centres, and the gutter never falls below 30px. The measure is
+     the viewport, not a percentage — .panes is 200% wide to carry the two
+     panes side by side, so a percentage here resolves against double the
+     screen and eats the whole pane. */
+  #sheet .pane{padding:0 max(30px,calc((100vw - 1520px)/2)) 64px}
+
+  /* ---- main pane: the sections tile instead of stacking ----
+     The columns go on an inner block, not on the scrolling pane itself. A
+     multicol box with a definite height fragments sideways — it would put
+     the overflow in a fourth and fifth column and scroll horizontally.
+     Given an auto height it balances into three and grows downward, which
+     is the scroll direction a settings pane is supposed to have. */
+  #paneMain .tile{columns:370px 3;column-gap:32px}
+  #paneMain .sect{break-inside:avoid-column}
+  #paneMain .footNote{padding-bottom:2px}
+
+  /* ---- role editor: identity down the left, the brief across the rest ----
+     Row 4 is the 1fr that absorbs whatever the brief is taller by, so the
+     left column stays packed at the top however long the brief runs. */
+  #paneRole .roleGrid{
+    display:grid;
+    grid-template-columns:minmax(280px,340px) minmax(0,1fr);
+    grid-template-rows:auto auto auto 1fr;
+    column-gap:32px;align-items:start;
+  }
+  #paneRole .sMark {grid-column:1;grid-row:1}
+  #paneRole .sVoice{grid-column:1;grid-row:2}
+  #paneRole .sRole {grid-column:1;grid-row:3}
+  #paneRole .sBrief{grid-column:2;grid-row:1/5}
+  /* the brief stops being one long card of hairline-separated rows and
+     becomes a board of them, so a field is something you look at rather
+     than something you scroll to */
+  #paneRole .briefGroup{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));
+    gap:16px;background:none;box-shadow:none;border-radius:0;overflow:visible;
+  }
+  #paneRole .briefGroup > *{
+    background:var(--group);border-radius:16px;box-shadow:var(--shadow);
+    border-bottom:0;overflow:hidden;
+  }
+  #paneRole .briefGroup > .briefWide{grid-column:1/-1}
+  #paneRole .briefHead{display:grid;grid-template-columns:1fr 1fr}
+  #paneRole .briefHead > .row{border-bottom:0}
+  #paneRole .briefHead > .row + .row{border-left:.5px solid var(--sep)}
+  #paneRole .briefGroup .ta{min-height:184px}
+  #paneRole .knForm textarea{min-height:210px}
+  #paneRole .knPick button{max-width:340px}
+
+  /* the voice-accuracy pane is a report, not a form — width would only
+     stretch its rows, so it keeps a reading column and centres */
+  .vtWrap{max-width:760px;margin-inline:auto}
+}
 
 /* ---------- responsive ---------- */
 @media (max-width:900px){
@@ -3434,67 +3529,84 @@ const CHEV = `<svg class="chev" viewBox="0 0 8 14" fill="none" stroke="currentCo
 function renderMain(){
   const byDept = {};
   state.roles.forEach(r => (byDept[r.dept] = byDept[r.dept] || []).push(r));
+  /* Each label-plus-group is wrapped in a .sect so the desktop layout has
+     something unbreakable to tile; on a phone the wrapper is a plain block
+     and the pane reads as the same single column it always did. */
   const deptGroups = Object.keys(DEPTS).filter(k => byDept[k]).map(k => `
-    <div class="gLabel">${DEPTS[k].name}</div>
-    <div class="group">
-      ${byDept[k].map(r => `<button class="row" data-edit="${r.id}">
-          ${avatarSVG(r, "", 34)}<span class="k">${esc(r.title)}<small>${(r.knowledge||[]).length} knowledge sources</small></span>${CHEV}
-        </button>`).join("")}
-      <button class="row" data-add="${k}"><span class="k" style="color:var(--accent)">Add a role</span></button>
-    </div>`).join("");
+    <section class="sect">
+      <div class="gLabel">${DEPTS[k].name}</div>
+      <div class="group">
+        ${byDept[k].map(r => `<button class="row" data-edit="${r.id}">
+            ${avatarSVG(r, "", 34)}<span class="k">${esc(r.title)}<small>${(r.knowledge||[]).length} knowledge sources</small></span>${CHEV}
+          </button>`).join("")}
+        <button class="row" data-add="${k}"><span class="k" style="color:var(--accent)">Add a role</span></button>
+      </div>
+    </section>`).join("");
 
   $("#paneMain").innerHTML = `
-    <div class="gLabel">Company</div>
-    <div class="group">
-      ${textRow("company","Name","Company name")}
-      ${textRow("subtitle","Subtitle","Org chart")}
-      ${textRow("title","Page heading","Who does what")}
-      <div class="row col"><div class="lab">Intro line</div>
-        <textarea class="ta oneline" data-text="blurb">${esc(state.blurb)}</textarea></div>
-    </div>
+    <div class="tile">
+    <section class="sect">
+      <div class="gLabel">Company</div>
+      <div class="group">
+        ${textRow("company","Name","Company name")}
+        ${textRow("subtitle","Subtitle","Org chart")}
+        ${textRow("title","Page heading","Who does what")}
+        <div class="row col"><div class="lab">Intro line</div>
+          <textarea class="ta oneline" data-text="blurb">${esc(state.blurb)}</textarea></div>
+      </div>
+    </section>
 
-    <div class="gLabel">Appearance</div>
-    <div class="group">
-      <div class="row"><span class="k">Theme</span>
-        <div class="seg ${state.appearance==="dark"?"b":""}" id="seg">
-          <span class="thumb"></span>
-          <button data-theme="light" aria-pressed="${state.appearance==="light"}">Light</button>
-          <button data-theme="dark" aria-pressed="${state.appearance==="dark"}">Dark</button>
+    <section class="sect">
+      <div class="gLabel">Appearance</div>
+      <div class="group">
+        <div class="row"><span class="k">Theme</span>
+          <div class="seg ${state.appearance==="dark"?"b":""}" id="seg">
+            <span class="thumb"></span>
+            <button data-theme="light" aria-pressed="${state.appearance==="light"}">Light</button>
+            <button data-theme="dark" aria-pressed="${state.appearance==="dark"}">Dark</button>
+          </div>
         </div>
+        <div class="row" style="display:block"><span class="k">Accent</span>
+          <div class="swatches">${ACCENTS.map(c=>`<button class="sw ${state.accent===c?"on":""}" data-accent="${c}" style="background:${c}" aria-label="Accent ${c}"></button>`).join("")}</div>
+        </div>
+        ${toggleRow("lines","Reporting lines","Show the connectors between roles")}
+        ${toggleRow("motion","Mark animation","Idle breathing and voice movement")}
       </div>
-      <div class="row" style="display:block"><span class="k">Accent</span>
-        <div class="swatches">${ACCENTS.map(c=>`<button class="sw ${state.accent===c?"on":""}" data-accent="${c}" style="background:${c}" aria-label="Accent ${c}"></button>`).join("")}</div>
-      </div>
-      ${toggleRow("lines","Reporting lines","Show the connectors between roles")}
-      ${toggleRow("motion","Mark animation","Idle breathing and voice movement")}
-    </div>
+    </section>
 
     ${deptGroups}
 
-    <div class="gLabel">Chat</div>
-    <div class="group">
-      <div class="row col"><div class="lab">Access token — or the full Web app URL</div>
-        <input class="ta oneline" type="password" data-token placeholder="Token, or https://script.google.com/…/exec?token=…" value="${esc(getToken())}" autocomplete="off" spellcheck="false" aria-label="Access token or Web app URL">
+    <section class="sect">
+      <div class="gLabel">Chat</div>
+      <div class="group">
+        <div class="row col"><div class="lab">Access token — or the full Web app URL</div>
+          <input class="ta oneline" type="password" data-token placeholder="Token, or https://script.google.com/…/exec?token=…" value="${esc(getToken())}" autocomplete="off" spellcheck="false" aria-label="Access token or Web app URL">
+        </div>
+        <div class="row"><span class="k" style="font-size:14px;color:var(--label2)">Status<small id="epStatus">${connStatusText()}</small></span></div>
+        ${getEndpoint() !== SHEET_ENDPOINT ? `<button class="row" data-endpoint-reset>
+          <span class="k" style="color:var(--accent)">Use the built-in endpoint again<small style="overflow-wrap:anywhere">Currently: ${esc(getEndpoint())}</small></span>
+        </button>` : ""}
       </div>
-      <div class="row"><span class="k" style="font-size:14px;color:var(--label2)">Status<small id="epStatus">${connStatusText()}</small></span></div>
-      ${getEndpoint() !== SHEET_ENDPOINT ? `<button class="row" data-endpoint-reset>
-        <span class="k" style="color:var(--accent)">Use the built-in endpoint again<small style="overflow-wrap:anywhere">Currently: ${esc(getEndpoint())}</small></span>
-      </button>` : ""}
-    </div>
-    <p class="footNote">Paste either the bare token, or the whole <code>/exec</code> URL from Apps Script's deploy dialog (with <code>?token=…</code> on the end if you like) — the app splits it and remembers both in this browser, so one paste per device is all it ever takes. After a re-deploy that mints a new URL, paste the new one here. Keep the Anthropic key in Script Properties, never in this page.</p>
+      <p class="footNote">Paste either the bare token, or the whole <code>/exec</code> URL from Apps Script's deploy dialog (with <code>?token=…</code> on the end if you like) — the app splits it and remembers both in this browser, so one paste per device is all it ever takes. After a re-deploy that mints a new URL, paste the new one here. Keep the Anthropic key in Script Properties, never in this page.</p>
+    </section>
 
-    <div class="gLabel">Voice</div>
-    <div class="group">
-      <button class="row" data-act="voicetest"><span class="k">Voice accuracy<small>Reads test phrases aloud for you to repeat and measures word error rate against the expected text.</small></span>${CHEV}</button>
-    </div>
+    <section class="sect">
+      <div class="gLabel">Voice</div>
+      <div class="group">
+        <button class="row" data-act="voicetest"><span class="k">Voice accuracy<small>Reads test phrases aloud for you to repeat and measures word error rate against the expected text.</small></span>${CHEV}</button>
+      </div>
+    </section>
 
-    <div class="gLabel">Configuration</div>
-    <div class="group">
-      <button class="row" data-act="export"><span class="k" style="color:var(--accent)">Export as JSON</span>${CHEV}</button>
-      <button class="row" data-act="import"><span class="k" style="color:var(--accent)">Import a file</span>${CHEV}</button>
-      <button class="row" data-act="reset"><span class="k" style="color:var(--danger)">Reset to the default chart</span></button>
-    </div>
-    <p class="footNote">Edits live in this browser tab only. Export a copy to keep them.</p>`;
+    <section class="sect">
+      <div class="gLabel">Configuration</div>
+      <div class="group">
+        <button class="row" data-act="export"><span class="k" style="color:var(--accent)">Export as JSON</span>${CHEV}</button>
+        <button class="row" data-act="import"><span class="k" style="color:var(--accent)">Import a file</span>${CHEV}</button>
+        <button class="row" data-act="reset"><span class="k" style="color:var(--danger)">Reset to the default chart</span></button>
+      </div>
+      <p class="footNote">Edits live in this browser tab only. Export a copy to keep them.</p>
+    </section>
+    </div>`;
 }
 
 /* =================================================================
@@ -3632,7 +3744,12 @@ function renderRolePane(){
       <button class="row" data-voice-preview><span class="k" style="color:var(--accent)">Preview voice</span></button>
     </div>`;
 
+  /* The sections keep the order they have always been read in — Mark, Brief,
+     Voice, Role — and the desktop grid places them rather than reordering
+     them, so the source and the phone both still run straight down. */
   $("#paneRole").innerHTML = `
+    <div class="roleGrid">
+    <section class="sect sMark">
     <div class="gLabel">Mark</div>
     <div class="group">
       <div class="editHero">${avatarSVG(r, "", 104)}<div><div class="n">${esc(r.title)}</div><div class="d">${esc(d.name)}</div></div></div>
@@ -3647,26 +3764,35 @@ function renderRolePane(){
         </div></div>
       <button class="row" data-look-style="1"><span class="k">Voiceprint<small>The waveform signature this persona idles at.</small></span><span class="v">Signature ${L.style+1} of 6</span>${CHEV}</button>
     </div>
+    </section>
 
+    <section class="sect sBrief">
     <div class="gLabel">Brief</div>
-    <div class="group">
-      <div class="row"><span class="k">Role title</span><input class="text" data-role-field="title" value="${esc(r.title)}"></div>
-      <div class="row"><span class="k">Language<small>Locale for voice dictation, like en-US or de-DE. Blank uses en-US.</small></span><input class="text" data-role-field="language" value="${esc(r.language||"")}" placeholder="en-US"></div>
+    <div class="group briefGroup">
+      <div class="briefHead briefWide">
+        <div class="row"><span class="k">Role title</span><input class="text" data-role-field="title" value="${esc(r.title)}"></div>
+        <div class="row"><span class="k">Language<small>Locale for voice dictation, like en-US or de-DE. Blank uses en-US.</small></span><input class="text" data-role-field="language" value="${esc(r.language||"")}" placeholder="en-US"></div>
+      </div>
       ${long("personality","Personality","How they show up")}
       ${long("context","Context","What they need to know about the business")}
       ${long("task","Task","What they're responsible for")}
-      <div class="row col"><div class="lab">Knowledge sources</div>
+      <div class="row col briefWide"><div class="lab">Knowledge sources</div>
         ${knEditorHTML(r)}
       </div>
       ${long("outcome","Outcome","What good looks like when they're done")}
       ${long("guardrails","Hard rules","Limits this role must never cross. Placed last in the prompt, where models weight them most.")}
       ${long("outOfScope","Out of scope","What to say when asked something this role doesn't own. Leave blank for the default handoff line.")}
     </div>
-    ${voiceGroup}
+    </section>
 
+    <section class="sect sVoice">${voiceGroup}</section>
+
+    <section class="sect sRole">
     <div class="gLabel">Role</div>
     <div class="group"><button class="row" data-act="delete"><span class="k" style="color:var(--danger)" id="delLabel">Remove this role</span></button></div>
-    <p class="footNote" id="delNote"></p>`;
+    <p class="footNote" id="delNote"></p>
+    </section>
+    </div>`;
   $("#sheetTitle").textContent = r.title;
 }
 
@@ -5807,6 +5933,7 @@ function renderVoiceTestPane(){
       <span class="tx">${esc(x.phrase)}${sub ? `<small>${esc(sub)}</small>` : ""}</span></div>`;
   }).join("");
   $("#paneRole").innerHTML = `
+    <div class="vtWrap">
     <div class="gLabel">Word error rate${done.length ? " · " + done.length + " of " + t.tests.length + " phrases" : ""}</div>
     <div class="group"><div class="vtBig">
       <div class="cell"><div class="num">${pct(werRaw)}</div><div class="lbl">Engine top guess</div></div>
@@ -5818,7 +5945,8 @@ function renderVoiceTestPane(){
     </div>
     <div class="gLabel">Phrases</div>
     <div class="group">${rows}</div>
-    <p class="footNote">Each phrase is read aloud — repeat it back once it finishes. What was heard, which alternative won, its confidence, and the word error rate are logged to the Sheet's VoiceTests tab when the deployment supports it. Run this on the live page with a real microphone; that measured figure is the acceptance number for the voice work.</p>`;
+    <p class="footNote">Each phrase is read aloud — repeat it back once it finishes. What was heard, which alternative won, its confidence, and the word error rate are logged to the Sheet's VoiceTests tab when the deployment supports it. Run this on the live page with a real microphone; that measured figure is the acceptance number for the voice work.</p>
+    </div>`;
 }
 $("#paneRole").addEventListener("click", e => {
   if(!VoiceTest.paneOpen) return;
