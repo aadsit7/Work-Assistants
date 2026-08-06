@@ -51,18 +51,49 @@ the colleague answers that persona was *additionally* shown go in `ContextShown`
 so the tab reads as the conversation it is and still answers "what did this
 persona actually see?"
 
-## Connect the app (one paste per browser)
+## Connecting is not something you do
 
-Open the live page → Settings → Chat and paste the full URL with your token on
-the end:
+The token is the only thing standing between the page and the Sheet, and it
+used to live in exactly one place: `localStorage`, in whichever browser had
+been told about it. That made *connected* a property of a device rather than
+of the app — every new laptop, phone, profile, private window, or cleared
+site-data landed you back on sample data with a banner asking you to go and
+paste something.
 
-    https://script.google.com/macros/s/…/exec?token=YOUR_APP_TOKEN
+There are now three places a token can come from, tried in order. The app is
+connected if **any** of them answers:
 
-The app splits it into the endpoint and the token and remembers both in that
-browser — one paste per device is all it ever takes. (Pasting just the bare
-token also works when the endpoint hasn't changed.) Once connected, personas,
-settings, and conversation logs sync both ways automatically, on the cadence
-the Sheet's `sync_interval_seconds` setting defines.
+| | Where | What it costs you |
+| --- | --- | --- |
+| 1 | `localStorage` — pasted into Settings › Chat | One paste, per browser |
+| 2 | The URL — `#token=…` or `?token=…` | One visit, per device |
+| 3 | `SHEET_TOKEN` in `index.html` | Nothing, ever |
+
+**Layer 3 is the one that makes it automatic.** Fill the constant near the top
+of `index.html` with your `APP_TOKEN` and there is no first-run step left at
+all: any browser that can open the page opens it connected. Read the value
+from Apps Script → Project Settings → **Script Properties** → `APP_TOKEN`
+rather than inventing a new one.
+
+Understand what you are trading. That constant is a real credential in a file
+anyone who can load the page can read, so on a public GitHub Pages site it
+means whoever finds the page can read and write the Sheet behind it and spend
+the Anthropic key it proxies. That is the right trade for a workspace page
+whose URL you keep to yourself and the wrong one for a page you hand out.
+Rotating it is one edit here plus `APP_TOKEN` in Script Properties.
+
+**Layer 2 is how you connect a device without publishing anything.** Open
+
+    https://your-page/#token=YOUR_APP_TOKEN
+
+once. The token is saved into that browser and then scrubbed out of the
+address bar with `replaceState`, so it does not survive into history, a
+screenshot, or a link copied after arriving. `&endpoint=https://…/exec` works
+the same way when the deployment has moved.
+
+Once connected — by any of the three — personas, settings, and conversation
+logs sync both ways automatically, on the cadence the Sheet's
+`sync_interval_seconds` setting defines.
 
 ## What "both directions" actually covers
 
@@ -111,14 +142,16 @@ succeeds.
 
 Three things turn it off, in rough order of how often they do:
 
-- **No token in this browser.** The endpoint is committed; the token never is.
-  Every new browser, device, profile, or cleared-site-data is a fresh paste.
-  Private windows and Safari's tracking prevention (which evicts local storage
-  for sites left alone for a week) both throw it away silently.
+- **No token anywhere.** With `SHEET_TOKEN` left empty, the token lives only in
+  whichever browser was told about it, so every new browser, device, profile,
+  or cleared-site-data is a fresh paste — and private windows and Safari's
+  tracking prevention (which evicts local storage for sites left alone for a
+  week) throw it away silently. Filling `SHEET_TOKEN` is what retires this
+  cause entirely; the `#token=` link retires it one device at a time.
 - **The token is lost.** Because it is paste-once, blanking `APP_TOKEN` in
   `Code.gs` — as this repo's copy ships — leaves the only surviving copy in
   Apps Script's **Project Settings → Script Properties**. Read it there rather
-  than inventing a new one; a new one has to be re-pasted on every device.
+  than inventing a new one; a new one has to be re-pasted everywhere.
 - **The deployment moved.** A brand-new deployment mints a new `/exec` URL
   while the old one keeps answering stale code. Paste the current URL from
   Deploy → Manage deployments.
@@ -145,17 +178,34 @@ Deploy → Manage deployments → ✏️ → Version: **New version** → Deploy
 the script alone does not update the live `/exec` URL — and a brand-new
 deployment mints a *new* URL, which you then paste into Settings → Chat once.
 
+## The workspace
+
+The app reads as a workspace rather than as a chart with a messenger bolted to
+it: a dark rail down the left with the lists in it, and the conversation
+filling everything else.
+
+- **The rail is one dark column** in both themes, under a header that names the
+  workspace and a pencil that starts a new chat. That is what makes the two
+  panes read as one object with a spine, instead of as two sheets of the same
+  white that happen to sit beside each other.
+- **The lists are both open at once.** *Conversations* and *Team* are sections
+  in one scroller, each with a disclosure triangle, and either collapses (the
+  app remembers which). Picking somebody to talk to used to mean switching to
+  a Team pane first, losing sight of your history to do it; now both are simply
+  there. The state persists per browser.
+- **The conversation fills the window.** The capped, centred column is gone —
+  a wide window gave you a narrow document with two empty margins.
+
 ## The side menu
 
-The left column is the app's spine, and it holds two things behind one switch.
-
-**Chats** is your history, newest first, grouped Today / Yesterday / Previous 7
-days / Previous 30 days / by month. Each row shows the cast that spoke in that
-conversation as stacked marks, its name, and how long it ran — so a conversation
-that changed hands is recognisable before you open it. Hovering a row reveals
-rename and delete; delete asks once, marks the row deleted in the Sheet, and
-never removes a logged message. **+ New chat** starts a fresh conversation with
-whoever is on screen, and pressing it twice does not leave a trail of empty ones.
+**Conversations** is your history, newest first, grouped Today / Yesterday /
+Previous 7 days / Previous 30 days / by month. Each row shows the cast that
+spoke in that conversation as stacked marks, its name, and how long it ran — so
+a conversation that changed hands is recognisable before you open it. Hovering
+a row reveals rename and delete; delete asks once, marks the row deleted in the
+Sheet, and never removes a logged message. **+ New chat** — the pencil in the
+header, or the row under the list — starts a fresh conversation with whoever is
+on screen, and pressing it twice does not leave a trail of empty ones.
 
 One person can now hold as many conversations as you like. Clicking someone in
 **Team** returns you to the one you were already having with them and starts one
@@ -175,13 +225,18 @@ hides and shows the column instead.
 
 ## Switching who answers, mid-conversation
 
-A chat does not have to belong to one person. The bar above the message box
-lists everyone in the current conversation and who is answering right now;
-**+ Bring in** adds anyone from the chart, and one tap on a chip hands the
-thread to them. Nothing is lost in the handover — the transcript stays whole,
-each reply is marked with its author's icon and title, and the newcomer can be
-put straight onto the question already on the table with **Ask them the same
-question**.
+A chat does not have to belong to one person. The header carries the members as
+a facepile with a count, the bar above the message box lists everyone in the
+current conversation and who is answering right now, and one tap on a chip
+hands the thread to them.
+
+Adding somebody has three doors to the same room, because "who else is in
+here?" and "add someone" are the same question asked twice: the **add-person
+icon** in the header, the **facepile itself** (a member list you can click is
+how you expect to add a member), and **+ Bring in** on the cast bar. Nothing is
+lost in the handover — the transcript stays whole, each reply is marked with
+its author's icon and title, and the newcomer can be put straight onto the
+question already on the table with **Ask them the same question**.
 
 You can hand it back as easily as you handed it over: tap the chip of anyone
 already in the conversation and they answer the next question. Ask the CEO, take
@@ -200,6 +255,22 @@ around today, and the whole exchange stays on the one row it started on.
 Picking someone from the chart or the outline still opens the conversation you
 were having with *them*; only people already in the current conversation stay in
 it when you click them.
+
+## Every message is signed
+
+Attribution used to be conditional. A reply wore its author's mark only once a
+second persona had joined, and what you typed wore nothing at all, because a
+right-aligned coloured bubble was understood to be yours. That reads fine as a
+phone messenger and badly as a workplace transcript: the two speakers are told
+apart by which edge of the column they hug, so scrolling back through a thread
+gives you a wall of alternating shapes rather than a list of who said what.
+
+Every message is now one row — avatar, name, time, then the words at the full
+width of the column. It is what lets an answer hold a table or a block of code
+without fighting a 68%-wide balloon for room, and what makes a thread with four
+people in it readable as a transcript. Runs by the same person inside five
+minutes collapse into the first row's header, so a signed transcript doesn't
+become a stack of name tags; a collapsed row shows its own time on hover.
 
 ## What an answer looks like
 
