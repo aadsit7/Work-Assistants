@@ -44,11 +44,18 @@ body{
   width:100%;max-width:1560px;margin-inline:auto;
 }
 @media (min-width:1561px){ .stage{border-inline:.5px solid var(--sep)} }
-.canvas{
+/* The side menu is the app's spine: every conversation you have ever had is
+   in it, and the team you can start a new one with is one tap away. Desktop
+   keeps it open as the left column; mobile slides it in over the chat. */
+.side{
   flex:none;width:var(--railW);min-width:0;
-  display:flex;flex-direction:column;min-height:0;position:relative;
-  border-right:.5px solid var(--sep);
+  display:flex;flex-direction:column;min-height:0;position:relative;z-index:3;
+  border-right:.5px solid var(--sep);background:var(--card);
 }
+body.rail-off .side{display:none}
+/* The tree needs width, so on desktop it renders only in the View chart
+   overlay; this pane is its mobile home and the node it returns to on close. */
+.chartPane{display:none;flex-direction:column;min-height:0}
 body::before{
   content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
   background:
@@ -93,6 +100,90 @@ input,textarea{font-family:inherit}
 .head{padding:16px 16px 0;text-align:left;flex:none}
 .head h1{margin:0;font-size:11px;line-height:1.3;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--label3)}
 .head p{display:none;margin:7px auto 0;max-width:46ch;font-size:14px;color:var(--label2);line-height:1.45}
+/* ---------- side menu ---------- */
+.sideTop{padding:12px 14px 4px;flex:none}
+.newChat{
+  display:flex;align-items:center;justify-content:center;gap:7px;width:100%;
+  padding:10px 14px;border-radius:12px;font-size:14px;font-weight:600;letter-spacing:-.01em;
+  color:#fff;background:var(--accent);
+  transition:transform .3s var(--spring),filter .2s;
+}
+.newChat svg{width:15px;height:15px}
+.newChat:hover{filter:brightness(1.06)}
+.newChat:active{transform:scale(.97)}
+.sideTabs{padding:10px 14px 2px;flex:none}
+.sideTabs .seg{width:100%}
+.sideTabs .seg button{flex:1;padding:6px 8px}
+.sideSearch{margin:10px 14px 4px}
+.sideSearch input{font-size:14px}
+.sidePane{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:4px 0 26px;scrollbar-width:thin}
+.sidePane[hidden]{display:none}
+.cLabel{
+  padding:14px 16px 6px;font-size:10.5px;font-weight:700;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--label3);
+}
+.cRow{
+  position:relative;display:flex;align-items:center;gap:9px;width:100%;
+  padding:9px 10px 9px 16px;text-align:left;transition:background .15s;
+}
+.cRow:hover{background:color-mix(in srgb,var(--label) 5%,transparent)}
+.cRow.on{background:color-mix(in srgb,var(--tint) 11%,transparent)}
+.cRow.on::before{
+  content:"";position:absolute;left:0;top:5px;bottom:5px;width:3px;
+  border-radius:0 2px 2px 0;background:var(--tint);
+}
+/* the cast, stacked — a conversation that changed hands says so at a glance */
+.cFaces{display:flex;flex:none;align-items:center}
+.cFaces .avatar{width:26px;height:26px;display:block;border-radius:50%}
+.cFaces .avatar + .avatar{margin-left:-9px;box-shadow:0 0 0 2px var(--card)}
+.cRow.on .cFaces .avatar + .avatar{box-shadow:0 0 0 2px color-mix(in srgb,var(--tint) 11%,var(--card))}
+.cMore{
+  width:26px;height:26px;margin-left:-9px;border-radius:50%;flex:none;display:grid;place-items:center;
+  background:var(--field);color:var(--label2);font-size:9.5px;font-weight:700;
+  box-shadow:0 0 0 2px var(--card);
+}
+.cText{flex:1;min-width:0}
+.cTitle{
+  display:block;font-size:13.5px;font-weight:500;letter-spacing:-.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.cRow.on .cTitle{font-weight:600}
+.cMeta{
+  display:block;font-size:11px;color:var(--label3);margin-top:1px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.cMeta mark{background:color-mix(in srgb,var(--accent) 26%,transparent);color:inherit;border-radius:3px}
+.cSpin{
+  width:12px;height:12px;flex:none;border-radius:50%;
+  border:2px solid var(--field);border-top-color:var(--accent);animation:spin .8s linear infinite;
+}
+/* Rename and delete live on the row, revealed on hover or keyboard focus, so
+   the list stays quiet until you reach for them. */
+.cActs{display:flex;gap:2px;flex:none;opacity:0;transition:opacity .15s}
+.cRowWrap{position:relative;display:flex;align-items:center}
+.cRowWrap:hover .cActs,.cRowWrap:focus-within .cActs{opacity:1}
+.cActs button{
+  width:26px;height:26px;border-radius:8px;display:grid;place-items:center;color:var(--label2);
+}
+.cActs button:hover{background:var(--field);color:var(--label)}
+.cActs button.danger:hover{background:color-mix(in srgb,var(--danger) 14%,transparent);color:var(--danger)}
+.cActs svg{width:14px;height:14px}
+.cConfirm{
+  display:flex;align-items:center;gap:8px;padding:8px 14px 8px 16px;
+  font-size:12px;color:var(--label2);background:color-mix(in srgb,var(--danger) 8%,transparent);
+}
+.cConfirm b{flex:1;min-width:0;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cConfirm button{font-size:12px;font-weight:600;padding:4px 9px;border-radius:8px;background:var(--field)}
+.cConfirm button.danger{background:var(--danger);color:#fff}
+.cEdit{display:flex;align-items:center;gap:8px;padding:7px 14px 7px 16px}
+.cEdit input{
+  flex:1;min-width:0;border:0;background:var(--field);border-radius:9px;padding:7px 10px;
+  font:inherit;font-size:13.5px;color:var(--label);
+}
+.cEdit input:focus{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent)}
+.sideNote{padding:22px 20px;font-size:12.5px;color:var(--label3);line-height:1.55;text-align:center}
+.sideNote b{display:block;color:var(--label2);font-weight:600;margin-bottom:3px}
+.sideFoot{padding:14px 20px 4px;font-size:11px;color:var(--label3);line-height:1.5;text-align:center}
 .railBar{display:flex;align-items:center;padding:10px 16px 12px;border-bottom:.5px solid var(--sep);flex:none}
 .viewChart{
   display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;
@@ -668,11 +759,8 @@ body.no-motion .ambientDot,body.no-motion .speak.pulse::after{animation:none}
 .vtRow .tx{flex:1;min-width:0}
 .vtRow small{display:block;color:var(--label3);margin-top:1px;overflow-wrap:anywhere}
 
-/* ---------- history ---------- */
-.sheet.history{height:min(680px,calc(100dvh - 120px))}
-.histThread{display:flex;flex-direction:column;gap:8px;padding:14px 2px 6px}
+/* search-hit highlight, in the side menu's conversation rows */
 mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;border-radius:3px;padding:0 1px}
-.histNote{text-align:center;color:var(--label3);font-size:13.5px;padding:34px 20px;line-height:1.55}
 
 /* ---------- role picker ---------- */
 .sheet.picker{height:min(640px,calc(100dvh - 120px))}
@@ -703,10 +791,19 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
   .seg.paneSwitch{display:flex}
   .card{width:100%;border-right:0;box-shadow:none}
   body.showing-chart .card{display:none}
-  body:not(.showing-chart) .canvas{display:none}
+  body:not(.showing-chart) .chartPane{display:none}
   .navTitle{display:none}
+  /* The side menu slides in over the conversation rather than displacing it,
+     so opening it never costs you your place in the thread. */
+  .side{
+    position:fixed;top:60px;bottom:0;left:0;z-index:60;
+    width:min(86vw,340px);border-right:.5px solid var(--sep);
+    transform:translateX(-101%);transition:transform .34s var(--spring);
+    box-shadow:0 0 40px rgba(0,0,0,.18);
+  }
+  body.menu-open .side{transform:none}
+  body.rail-off .side{display:flex}
   .sheet.picker{height:82dvh}
-  .sheet.history{height:94dvh}
   .sheet{
     left:0;right:0;top:auto;bottom:0;width:auto;height:94dvh;border-radius:22px 22px 0 0;
     transform:translateY(102%) scale(1);
@@ -714,8 +811,10 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
   .sheet.on{transform:translateY(0)}
   /* Mobile keeps the pre-rail layout: full-width panes, big heading, the tree
      as the Chart pane, centered empty state, and the full-width banner strip. */
-  .canvas{flex:1;width:auto;border-right:0}
-  .railBar,.outline{display:none}
+  .chartPane{flex:1;width:auto;border-right:0}
+  /* View chart is desktop-only — mobile has the Chart pane in the switch above
+     — but the outline is how you pick someone inside the drawer, so it stays. */
+  .railBar{display:none}
   .chartWrap{display:flex}
   .paneCol{max-width:none}
   .bubble{max-width:82%}
@@ -755,8 +854,8 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
     <button data-pane="chat" aria-pressed="true">Chat</button>
     <button data-pane="chart" aria-pressed="false">Chart</button>
   </div>
-  <button class="iconBtn" id="histBtn" aria-label="Conversation history" title="Conversation history">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.2"/><path d="M12 7.6V12l3.1 1.9"/></svg>
+  <button class="iconBtn" id="menuBtn" aria-label="Show conversations" aria-expanded="true" title="Conversations">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.2" y="4.2" width="17.6" height="15.6" rx="2.6"/><path d="M9.4 4.4v15.2"/></svg>
   </button>
   <button class="iconBtn" id="cog" aria-label="Open settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
@@ -776,18 +875,43 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
 
 <div class="stage">
 
-  <div class="canvas">
+  <!-- side menu: conversation history and the team, in one column -->
+  <aside class="side" id="side" aria-label="Conversations and team">
+    <div class="sideTop">
+      <button class="newChat" id="newChat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        New chat
+      </button>
+    </div>
+    <div class="sideTabs">
+      <div class="seg s" id="sideSwitch">
+        <span class="thumb"></span>
+        <button data-side="chats" aria-pressed="true">Chats</button>
+        <button data-side="team" aria-pressed="false">Team</button>
+      </div>
+    </div>
+    <div class="search sideSearch" id="sideSearchRow">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+      <input id="sideQuery" placeholder="Search conversations" autocomplete="off" aria-label="Search conversations">
+    </div>
+    <div class="sidePane" id="paneChats"></div>
+    <div class="sidePane" id="paneTeam" hidden>
+      <div class="railBar">
+        <button class="viewChart" id="viewChart">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="5" rx="1.5"/><rect x="3" y="16" width="6" height="5" rx="1.5"/><rect x="15" y="16" width="6" height="5" rx="1.5"/><path d="M12 8v3M6 16v-2.5h12V16"/></svg>
+          View chart
+        </button>
+      </div>
+      <nav class="outline" id="outline" aria-label="Team outline"></nav>
+    </div>
+  </aside>
+
+  <!-- the tree: the Chart pane on mobile, reparented into the overlay on desktop -->
+  <div class="chartPane" id="chartPane">
     <header class="head">
       <h1 id="pageTitle">Who does what</h1>
       <p id="pageSub">Pick anyone to start a conversation.</p>
     </header>
-    <div class="railBar">
-      <button class="viewChart" id="viewChart">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="5" rx="1.5"/><rect x="3" y="16" width="6" height="5" rx="1.5"/><rect x="15" y="16" width="6" height="5" rx="1.5"/><path d="M12 8v3M6 16v-2.5h12V16"/></svg>
-        View chart
-      </button>
-    </div>
-    <nav class="outline" id="outline" aria-label="Team outline"></nav>
     <div class="chartWrap" id="chartWrap">
       <main class="chartScroll"><div class="tree" id="tree"></div></main>
       <div class="zoomBar">
@@ -887,26 +1011,6 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
     <input id="pickerQuery" placeholder="Search roles" autocomplete="off" aria-label="Search roles">
   </div>
   <div class="pane" id="pickerList"></div>
-</section>
-
-<!-- conversation history (memory only) -->
-<section class="sheet history" id="histSheet" role="dialog" aria-modal="true" aria-label="Conversation history">
-  <div class="sheetNav">
-    <button class="navAct" id="histBack" hidden>
-      <svg class="chev" viewBox="0 0 8 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(180deg);color:var(--accent)"><path d="M1 1l6 6-6 6"/></svg>
-      History
-    </button>
-    <div class="t" id="histTitle">History</div>
-    <button class="navAct right" id="histDone">Done</button>
-  </div>
-  <div class="search" id="histSearchRow">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
-    <input id="histQuery" placeholder="Search this session's conversations" autocomplete="off" aria-label="Search conversations">
-  </div>
-  <div class="panes" id="histPanes">
-    <div class="pane" id="histList"></div>
-    <div class="pane" id="histView"></div>
-  </div>
 </section>
 
 <!-- settings -->
@@ -1307,11 +1411,12 @@ function normalizeRoles(){
 }
 let state = structuredClone(DEFAULTS);
 /* selectedId — the persona who answers the next message.
-   convId     — the conversation on screen, and the key into threads/archives/
-                pinned/pending/inflight. It is normally the same id: a
-                conversation is keyed by whoever started it. Handing the
-                conversation to a second persona moves selectedId alone, which
-                is what keeps one transcript while the answers change hands. */
+   convId     — the conversation on screen, and the key into convs/threads/
+                participants/pinned/pending/inflight. Its own id, not a
+                persona's: one persona can be in many conversations. Handing
+                the conversation to a second persona moves selectedId alone,
+                which is what keeps one transcript while the answers change
+                hands. */
 let selectedId = null, convId = null, editingId = null;
 const $ = (s,r=document)=>r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1485,7 +1590,21 @@ async function backgroundSync(){
     if(tab === "chat") renderThread();
     syncPip();
   }catch(e){ /* transient — the next tick retries; chat errors surface on their own */ }
-  finally{ syncBusy = false; }
+  finally{
+    syncBusy = false;
+    /* Conversations are as syncable as personas: one started on a phone should
+       appear in the list here. It reads on its own slower clock — a summary is
+       a bigger reply than a config read and nothing about it is urgent. */
+    refreshHistory();
+  }
+}
+const HISTORY_MIN_GAP = 60 * 1000;
+let lastHistoryRead = 0;
+async function refreshHistory(force){
+  if(!sheetConnected || !getToken()) return;
+  if(!force && Date.now() - lastHistoryRead < HISTORY_MIN_GAP) return;
+  try{ await loadHistory(); historyNote = ""; }
+  catch(err){ /* the list keeps what it has; the next tick tries again */ }
 }
 document.addEventListener("visibilitychange", () => {
   if(!document.hidden && sheetConnected && Date.now() - lastWarm > syncIntervalMs()) backgroundSync();
@@ -1613,9 +1732,26 @@ function refreshVoiceCSS(){
 }
 
 /* ========== chart ========== */
+/* The badge counts questions put to a persona across every conversation open
+   in this browser, not just the one on screen — a persona can now be in many.
+   User messages carry `to`, and a transcript restored from the Sheet sets it
+   from the PersonaId the Sheet logged against the turn, so a reopened
+   conversation contributes its share too. Computed once per render pass rather
+   than per node: the chart and the outline both draw from this map. */
+let askedMap = {};
+function recountAsked(){
+  askedMap = {};
+  Object.keys(threads).forEach(k => {
+    (threads[k] || []).forEach(m => {
+      if(m.role !== "user" || m.error || m.note) return;
+      const id = m.to || (convs[k] && convs[k].root);
+      if(id) askedMap[id] = (askedMap[id] || 0) + 1;
+    });
+  });
+}
 function nodeHTML(role, isRoot){
   const d = deptOf(role);
-  const asked = (threads[role.id] || []).filter(m => m.role === "user").length;
+  const asked = askedMap[role.id] || 0;
   return `<button class="node ${isRoot?"root-node":""} ${selectedId===role.id?"is-selected":""}"
       style="--tint:${d.tint}" data-id="${role.id}" aria-label="${esc(role.title)}, ${esc(d.name)}">
       ${asked ? `<span class="badge">${asked}</span>` : ""}
@@ -1633,7 +1769,7 @@ function branch(role){
    their in-department reports indented one step under them. */
 function outlineRow(role, sub){
   const d = deptOf(role);
-  const asked = (threads[role.id] || []).filter(m => m.role === "user").length;
+  const asked = askedMap[role.id] || 0;
   return `<button class="oRow ${sub ? "sub" : ""} ${selectedId === role.id ? "is-selected" : ""}"
       style="--tint:${d.tint}" data-id="${role.id}" ${selectedId === role.id ? 'aria-current="true"' : ""}
       aria-label="${esc(role.title)}, ${esc(d.name)}">
@@ -1662,6 +1798,7 @@ function renderOutline(){
 }
 function renderChart(){
   refreshVoiceCSS();
+  recountAsked();
   const root = rootRole();
   $("#tree").innerHTML = root ? `<ul>${branch(root)}</ul>` : "";
   renderOutline();
@@ -1753,17 +1890,122 @@ function applyChrome(){
    answered. Keep the Anthropic key in Script Properties — never here.
 ================================================================= */
 const threads = {};              // convId -> [{role:"user"|"assistant", content, speaker, error, note}]
-const archives = {};             // convId -> [{at, end, pins, participants, messages}] — cleared conversations, memory only
 let tab = "chat";
 const pending = new Set();       // convIds with an answer in flight
 const inflight = new Map();      // convId -> AbortController for that answer
 
 /* =================================================================
+   A CONVERSATION IS A THING, NOT A PERSONA
+
+   Conversations used to be keyed by the persona who started them,
+   which capped you at one per person: opening a second conversation
+   with the CEO meant clearing the first. They are their own objects
+   now, keyed by an id this browser mints — and that id IS the
+   Sheet's InteractionId, sent on every turn, so one conversation is
+   one Interactions row and there is no id to map between the two
+   sides. A conversation started while offline gets its row whenever
+   its first turn finally reaches the Sheet.
+
+   convs[k] is the record, threads[k] its messages, participants[k]
+   its cast. `loaded` separates a conversation whose transcript is in
+   memory from one the Sheet has only described: those load when
+   opened, which is what keeps boot to a single summary call instead
+   of every transcript you have ever had.
+================================================================= */
+const convs = {};                // convId -> record (see makeConv)
+function convUid(){
+  try{
+    if(crypto && crypto.randomUUID) return "int_" + crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+  }catch(e){}
+  return "int_" + Math.random().toString(16).slice(2, 10) + Date.now().toString(16).slice(-4);
+}
+function makeConv(rootId, o){
+  o = o || {};
+  const id = o.id || convUid();
+  const loaded = o.loaded !== false;
+  convs[id] = {
+    id, root: rootId || "", title: o.title || "",
+    createdAt: o.createdAt || Date.now(),
+    updatedAt: o.updatedAt || o.createdAt || Date.now(),
+    messageCount: o.messageCount || 0,
+    remote: !!o.remote,     // the Sheet has a row for it
+    loaded,                 // its transcript is in memory
+    loading: false
+  };
+  const cast = (o.participantIds || []).filter(Boolean);
+  participants[id] = cast.length ? cast.slice() : (rootId ? [rootId] : []);
+  if(loaded && !threads[id]) threads[id] = [];
+  return convs[id];
+}
+/* Its own name if it has been given one, else the question it opened with. */
+function convTitle(k){
+  const c = convs[k];
+  if(c && c.title) return c.title;
+  const first = (threads[k] || []).find(m => m.role === "user" && !m.note);
+  if(first) return clip(String(first.content).replace(/\s+/g, " "), 60);
+  const r = roleById((c && c.root) || k);
+  return r ? "New chat with " + r.title : "New chat";
+}
+/* A conversation is worth listing once it holds a message, has a row in the
+   Sheet, or is the one on screen — so a brand-new empty chat shows you where
+   you are, and stops being listed if you walk away without using it. */
+function convLive(k){
+  const c = convs[k];
+  if(!c) return false;
+  return k === convId || !c.loaded || c.remote || (threads[k] || []).some(m => !m.note);
+}
+function convsSorted(){
+  return Object.keys(convs).filter(convLive).map(k => convs[k])
+    .sort((a, b) => (b.updatedAt - a.updatedAt) || (b.createdAt - a.createdAt));
+}
+function touchConv(k){
+  const c = convs[k];
+  if(!c) return;
+  c.updatedAt = Date.now();
+  const real = (threads[k] || []).filter(m => !m.note);
+  if(real.length) c.messageCount = real.length;
+}
+/* Clicking someone in the team list returns you to the conversation you were
+   already having with them, and starts one when there isn't one. A conversation
+   the Sheet has only summarised is not a candidate: reopening a chat from three
+   weeks ago because you tapped its persona would be a surprise, so those are
+   opened deliberately, from the list. */
+function convForRole(roleId){
+  const mine = convsSorted().filter(c => c.root === roleId && c.loaded);
+  return mine.length ? mine[0].id : null;
+}
+/* Start a conversation and go to it. Defaults to whoever is on screen, because
+   "New chat" after reading someone's answer means another question for them. */
+function newChat(roleId){
+  const who = roleById(roleId) || roleById(selectedId) || rootRole();
+  if(!who) return null;
+  const id = makeConv(who.id).id;
+  selectRole(who.id, { conv: id });
+  dropEmptyConvs(id);
+  renderSide();
+  if(innerWidth <= 900) closeMenu();
+  if(innerWidth > 900 && !$("#composerInput").disabled) $("#composerInput").focus();
+  return id;
+}
+/* Empty conversations are bookkeeping, not history: pressing New chat twice
+   should not leave a trail of them. Only ever drops ones with nothing in them
+   and nothing in flight. */
+function dropEmptyConvs(keep){
+  Object.keys(convs).forEach(k => {
+    if(k === keep || k === convId) return;
+    const c = convs[k];
+    if(c.loaded && !c.remote && !(threads[k] || []).length && !pending.has(k)){
+      delete convs[k]; delete threads[k]; delete participants[k];
+    }
+  });
+}
+
+/* =================================================================
    WHO IS IN THE CONVERSATION
 
-   A conversation is keyed by the persona who started it and lists
-   everyone who has since been handed the thread. One persona in the
-   list is the ordinary case and behaves exactly as it always did.
+   A conversation lists everyone who has been handed it, in the order
+   they joined. One persona in the list is the ordinary case and
+   behaves exactly as it always did.
 
    Assistant messages carry `speaker` — the persona who wrote them —
    so a transcript stays readable no matter who answered what, and so
@@ -1775,15 +2017,37 @@ const inflight = new Map();      // convId -> AbortController for that answer
    the version of it that was live when they first spoke.
 ================================================================= */
 const participants = {};                       // convId -> [roleId] in the order they joined
-const partsOf = k => (k ? (participants[k] || [k]) : []);
+const partsOf = k => {
+  if(!k) return [];
+  if(participants[k]) return participants[k];
+  const c = convs[k];
+  return c && c.root ? [c.root] : (roleById(k) ? [k] : []);
+};
 const castOf = k => partsOf(k).filter(roleById);
 const inConv = (k, id) => partsOf(k).indexOf(id) >= 0;
 function joinConv(k, id){
   if(!k || !id) return;
-  const p = participants[k] || (participants[k] = [k]);
+  const p = participants[k] || (participants[k] = partsOf(k).slice());
   if(p.indexOf(id) < 0) p.push(id);
 }
-const pinKey = (k, id) => k + " " + id;
+/* A transcript read back from the Sheet knows who answered each turn even when
+   the cast column is missing: the founder first, then each new voice in the
+   order it appears. This is what makes the cast bar of a reopened conversation
+   complete enough to keep handing it around. */
+function castFromMessages(messages, rootId){
+  const out = rootId ? [rootId] : [];
+  (messages || []).forEach(m => {
+    const id = m.speaker || m.switchTo;
+    if(id && out.indexOf(id) < 0) out.push(id);
+  });
+  return out;
+}
+/* A NUL byte used to separate these two ids. It survived only because both
+   sides of every comparison went through this one function: HTML parsing
+   rewrites U+0000 to U+FFFD, so the key was never the character written
+   here, and one stray byte made the whole file read as binary to git and
+   grep. A pipe cannot appear in an id and needs no such explanation. */
+const pinKey = (k, id) => k + "|" + id;
 /* who spoke last in a conversation — where "open this conversation" lands */
 function lastSpeaker(k){
   const t = threads[k] || [];
@@ -1791,6 +2055,8 @@ function lastSpeaker(k){
     const id = t[i].switchTo || t[i].speaker;
     if(id && roleById(id)) return id;
   }
+  const cast = castOf(k);
+  if(cast.length) return cast[cast.length - 1];
   return roleById(k) ? k : (rootRole() || {}).id;
 }
 
@@ -1913,7 +2179,7 @@ const Agent = {
   /* Answer chain: ask with web search enabled; if that fails for any reason
      except a user cancel, ask once more with search off; only then give up
      and let the caller show a plain error. The signal aborts either leg. */
-  async reply(role, history, signal){
+  async reply(role, history, signal, convKey){
     const built = buildPrompt(role);
     if(built.missing.length) throw new Error("brief incomplete: " + built.missing.join(", "));
     if(!getToken()) return this.placeholder(role);
@@ -1931,6 +2197,12 @@ const Agent = {
       temperature: FIDELITY.temperature,
       channel: (lastUser && lastUser.channel) || "chat",
       webSearch: true,
+      /* The conversation this turn belongs to, so the Sheet threads it onto one
+         Interactions row instead of opening a new one per turn — and userText
+         so the row records what the person typed, separately from the wire turn
+         below, which may carry a colleague's answer quoted into it. */
+      interactionId: convKey || undefined,
+      userText: lastUser ? String(lastUser.content) : "",
       messages: wireHistory(history, role.id)
     };
     if(lastUser && typeof lastUser.confidence === "number") payload.transcriptConfidence = lastUser.confidence;
@@ -1950,6 +2222,11 @@ const Agent = {
     const data = await sheetCall(payload, { timeoutMs: CHAT_TIMEOUT_MS, signal });
     const text = data.reply || data.text || data.content;
     if(!text) throw new Error("empty reply");
+    /* The reply proves the Sheet now holds this conversation, which is what
+       lets the side menu offer rename and delete on it rather than treating it
+       as something only this browser knows about. */
+    const id = data.interactionId || payload.interactionId;
+    if(id && convs[id]) convs[id].remote = true;
     return typeof text === "string" ? text : JSON.stringify(text);
   },
   async placeholder(role){
@@ -2342,25 +2619,16 @@ const STARTERS = [
 /* pinKey(conversation, persona) -> prompt hash, captured the first time that
    persona answers in that conversation */
 const pinned = {};
-/* Clearing a conversation moves it into the in-memory archive instead of
-   destroying it, so History can still find it. The pins travel with the
-   conversation — one per persona who spoke in it — so restoring an archived
-   one brings back each speaker's original hash. */
-function archiveThread(key){
-  const t = threads[key];
-  delete threads[key];
-  const cast = partsOf(key);
-  delete participants[key];
-  const pins = {};
-  cast.forEach(id => {
-    const pk = pinKey(key, id);
-    if(pinned[pk]){ pins[id] = pinned[pk]; delete pinned[pk]; }
-  });
-  if(t && t.some(m => !m.error)){
-    (archives[key] = archives[key] || []).unshift({
-      at: t[0].at || Date.now(), end: Date.now(), pins, participants: cast, messages: t
-    });
-  }
+/* "Start a new one" leaves the finished conversation exactly where it is — in
+   the side menu, and in the Sheet — and moves the composer to a fresh one with
+   the same person. Nothing is destroyed and nothing needs restoring, which is
+   what the in-memory archive this replaced existed to fake. An untouched
+   conversation is simply reused rather than multiplied. */
+function startFresh(key){
+  cancelAnswer(key, true);
+  const root = (convs[key] && convs[key].root) || selectedId;
+  if(!(threads[key] || []).length){ renderThread(); return key; }
+  return newChat(root);
 }
 function threadNotices(r){
   const built = buildPrompt(r);
@@ -2443,7 +2711,7 @@ function renderThread(){
   box.innerHTML =
     threadNotices(r) +
     `<div class="stamp">Today ${time}</div>` +
-    `<div class="clearBar"><button data-clear>Clear conversation</button></div>` +
+    `<div class="clearBar"><button data-clear>Start a new conversation</button></div>` +
     t.map((m, i) => msgHTML(m, { speakers, reask: i === lastIdx && asked && !blocked })).join("") +
     (pending.has(convId) ? `<div class="msg from"><div class="dots"><i></i><i></i><i></i></div></div>` : "");
   if(!sameConv || nearBottom) box.scrollTop = box.scrollHeight;
@@ -2535,8 +2803,14 @@ async function sendTo(key, roleId, text, src){
       ? consumeVoiceMeta() : { channel:"chat" });
   if(input && dictTarget.input === input) discardDictation();
   Speech.stop();
+  /* A conversation reached through the pop-out or an ambient ask may never have
+     been opened here, so make sure it has a record before it gets a message. */
+  if(!convs[key]) makeConv(roleId, { id: key });
   threads[key] = threads[key] || [];
   threads[key].push({ role:"user", content:text.trim(), at:Date.now(), to:roleId, channel:vm.channel, confidence:vm.confidence });
+  touchConv(key);
+  dropEmptyConvs(key);
+  renderSide();
   if(input){ input.value = ""; if(src.reset) src.reset(); }
   const ctl = new AbortController();
   inflight.set(key, ctl);
@@ -2548,7 +2822,7 @@ async function sendTo(key, roleId, text, src){
   renderChart(); PopOut.render(); refreshSendUI();
   let outcome = "answered";
   try{
-    const reply = await Agent.reply(r, threads[key], ctl.signal);
+    const reply = await Agent.reply(r, threads[key], ctl.signal, key);
     (threads[key] = threads[key] || []).push({ role:"assistant", content:reply, at:Date.now(), speaker:roleId });
     /* speak if this conversation is on screen with the speaker on, or the
        asker (ambient) asked for it outright */
@@ -2565,8 +2839,9 @@ async function sendTo(key, roleId, text, src){
     pending.delete(key);
     inflight.delete(key);
     VoiceState.clear("thinking", roleId);
+    touchConv(key);
     if(convId === key) renderThread();
-    renderChart(); refreshSendUI();
+    renderChart(); renderSide(); refreshSendUI();
     PopOut.onAnswer(key);
   }
   return outcome;
@@ -2617,10 +2892,11 @@ function renderCard(){
   });
 }
 /* The one way in to "who am I talking to". opts.conv names the conversation
-   outright (History opening an old one, a reset landing on the root). Without
-   it the rule is: a persona already in this conversation keeps it — clicking
-   them in the chart or the picker moves the question to them rather than
-   dumping you out of the thread — and anyone else brings up their own.
+   outright (the side menu opening an old one, a reset landing on the root).
+   Without it the rule is: a persona already in this conversation keeps it —
+   clicking them in the chart or the picker moves the question to them rather
+   than dumping you out of the thread — and anyone else brings up the
+   conversation you were last having with them, or a new one.
    opts.keepDraft leaves what you have typed alone, which is what a hand-off
    inside one conversation wants: write the question, then choose who answers. */
 function selectRole(id, opts){
@@ -2628,8 +2904,10 @@ function selectRole(id, opts){
   const r = roleById(id) || rootRole();
   if(!r) return;
   selectedId = r.id;
-  convId = opts.conv !== undefined ? opts.conv : (inConv(convId, r.id) ? convId : r.id);
-  renderChart(); renderCard();
+  convId = opts.conv !== undefined ? opts.conv
+    : (inConv(convId, r.id) ? convId : (convForRole(r.id) || makeConv(r.id).id));
+  if(!convs[convId]) makeConv(r.id, { id: convId });
+  renderChart(); renderCard(); renderSide();
   const sel = $(".oRow.is-selected");
   if(sel) sel.scrollIntoView({block:"nearest"});
   /* only the main composer's draft dies with a persona switch — a pop-out
@@ -2693,8 +2971,9 @@ function openChart(){
 function closeChart(){
   if(!chartOpen()) return;
   $("#chartOverlay").classList.remove("on");
-  if(!$("#sheet").classList.contains("on") && !$("#picker").classList.contains("on") && !histOpen()) $("#scrim").classList.remove("on");
-  chartRestoreTimer = setTimeout(() => $(".canvas").appendChild($("#chartWrap")), 340);
+  if(!$("#sheet").classList.contains("on") && !$("#picker").classList.contains("on") &&
+     !document.body.classList.contains("menu-open")) $("#scrim").classList.remove("on");
+  chartRestoreTimer = setTimeout(() => $("#chartPane").appendChild($("#chartWrap")), 340);
   $("#viewChart").focus();
 }
 
@@ -2839,8 +3118,11 @@ function renderRolePane(){
 
 /* ========== role picker ========== */
 const clip = (t,n) => t.length > n ? t.slice(0, n-1).trimEnd() + "…" : t;
+/* The last thing said in the conversation you were having with this persona —
+   whichever of their conversations that was. Falls back to what they do. */
 function previewFor(r){
-  const t = threads[r.id] || [];
+  const k = convForRole(r.id);
+  const t = (k && threads[k]) || [];
   if(t.length){
     const last = t[t.length-1];
     return (last.role === "user" ? "You: " : "") + clip(displayText(last).replace(/\s+/g," "), 46);
@@ -2883,7 +3165,8 @@ function openPicker(mode){
 }
 function closePicker(){
   $("#picker").classList.remove("on");
-  if(!$("#sheet").classList.contains("on") && !histOpen()) $("#scrim").classList.remove("on");
+  if(!$("#sheet").classList.contains("on") && !chartOpen() &&
+     !document.body.classList.contains("menu-open")) $("#scrim").classList.remove("on");
 }
 
 /* ========== settings plumbing ========== */
@@ -2924,12 +3207,21 @@ const setStatus = s => { if($("#epStatus")) $("#epStatus").textContent = s; };
 /* One attempt at reading the whole config and adopting it. Throws on failure
    so each caller can word its own message; on success the app is connected,
    which is what arms background sync and every write-back. */
+/* what stopped the history read, when one did — the side menu says so rather
+   than presenting a short list as if it were the whole of it */
+let historyNote = "";
 async function loadFromSheet(){
   const cfg = await sheetCall({ action:"config" });
   if(!Array.isArray(cfg.roles) || !cfg.roles.length) throw new Error("no personas in the Sheet");
   applyConfig(cfg);
   setConnected(true);
   lastWarm = Date.now();
+  /* History is a separate, later concern: the personas have to exist before a
+     conversation's cast can be resolved, and a Sheet that answers config but
+     not history is connected — just without its past. So this never fails the
+     connection, and a server too old to know the action simply has none. */
+  try{ await loadHistory(); historyNote = ""; }
+  catch(err){ historyNote = String(err.message || err); renderSide(); }
 }
 
 /* =================================================================
@@ -3136,12 +3428,10 @@ $("#thread").addEventListener("click", e => {
     if(last) sendTo(convId, selectedId, last.content);
     return;
   }
+  /* Not "clear" any more: the conversation you are leaving stays in the side
+     menu and in the Sheet, and this starts a fresh one with the same person. */
   if(e.target.closest("[data-clear]")){
-    cancelAnswer(convId, true);
-    archiveThread(convId);
-    /* a cleared conversation starts again with whoever you were talking to */
-    convId = selectedId;
-    delete participants[convId];
+    startFresh(convId);
     renderThread(); renderChart(); PopOut.render();
   }
 });
@@ -3481,184 +3771,460 @@ if(Speech.supported()){
 }
 
 /* =================================================================
-   HISTORY — per-persona conversation history, held in memory only.
+   SIDE MENU — every conversation you have ever had, in the rail.
 
-   Live threads and archived (cleared) conversations are both listed,
-   grouped by persona. The search box matches message text across all
-   of them: a hit in a live thread jumps straight to that bubble; a
-   hit in an archived one opens a read-only transcript. Nothing here
-   is persisted — closing the page clears it, on purpose.
+   The list is the union of two sources and shows no seam between
+   them: conversations live in this browser, and conversations the
+   Sheet knows about. A Sheet one arrives as a summary — title, cast,
+   counts, times — and loads its transcript the first time it is
+   opened, so boot costs one call no matter how much history exists.
+
+   Because the Sheet is the store, history is no longer a property of
+   this tab. Reload, switch device, clear the browser: the list is
+   the same, because Interactions and Messages are the same. What
+   this file holds is a cache of them plus whatever has not been
+   sent yet.
+
+   Search covers both halves honestly. Titles and any transcript
+   already in memory are matched here, instantly, as you type; the
+   full text of everything else is matched by the server against the
+   Messages tab, which is the only place that text exists. The two
+   result sets are merged, so one query reaches a question asked
+   months ago on another machine.
+
+   The Team pane is the org outline that used to be the whole rail —
+   it starts a conversation, where the Chats pane returns to one.
 ================================================================= */
-function histOpen(){ return $("#histSheet").classList.contains("on"); }
-function histGoDeep(deep){
-  $("#histPanes").classList.toggle("deep", deep);
-  $("#histBack").hidden = !deep;
-  $("#histSearchRow").hidden = deep;
-  if(!deep){ $("#histTitle").textContent = "History"; $("#histList").scrollTop = 0; }
+const sideState = { pane:"chats", q:"", hits:null, hitsFor:"", editing:null, confirming:null, loading:false, error:"" };
+
+function showMenu(){
+  document.body.classList.add("menu-open");
+  $("#menuBtn").setAttribute("aria-expanded", "true");
+  if(innerWidth <= 900) $("#scrim").classList.add("on");
 }
-function openHistory(){
-  $("#histQuery").value = "";
-  renderHistory();
-  histGoDeep(false);
-  $("#histSheet").classList.add("on");
-  $("#scrim").classList.add("on");
-  if(innerWidth > 900) setTimeout(() => $("#histQuery").focus(), 380);
-}
-function closeHistory(){
-  $("#histSheet").classList.remove("on");
+function closeMenu(){
+  document.body.classList.remove("menu-open");
+  $("#menuBtn").setAttribute("aria-expanded", String(innerWidth > 900 && !document.body.classList.contains("rail-off")));
   if(!$("#sheet").classList.contains("on") && !$("#picker").classList.contains("on") && !chartOpen())
     $("#scrim").classList.remove("on");
 }
+/* One button, two jobs, because the menu means different things on the two
+   layouts: on a phone it is a drawer over the chat, on a desktop it is the
+   column beside it, and hiding that column is what "close" means there. */
+function toggleMenu(){
+  if(innerWidth <= 900){
+    document.body.classList.contains("menu-open") ? closeMenu() : showMenu();
+    return;
+  }
+  const off = document.body.classList.toggle("rail-off");
+  $("#menuBtn").setAttribute("aria-expanded", String(!off));
+  if(!off) renderSide();
+}
+function setSidePane(pane){
+  sideState.pane = pane;
+  $("#sideSwitch").classList.toggle("b", pane === "team");
+  $("#sideSwitch").querySelectorAll("[data-side]").forEach(b =>
+    b.setAttribute("aria-pressed", String(b.dataset.side === pane)));
+  $("#paneChats").hidden = pane !== "chats";
+  $("#paneTeam").hidden = pane !== "team";
+  $("#sideSearchRow").hidden = pane !== "chats";
+  if(pane === "chats") renderSide();
+}
+
+/* ---------- when a conversation happened ---------- */
+const startOfDay = ts => { const d = new Date(ts); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+function dayGroup(ts){
+  const days = Math.round((startOfDay(Date.now()) - startOfDay(ts)) / 86400000);
+  if(days <= 0) return "Today";
+  if(days === 1) return "Yesterday";
+  if(days < 7) return "Previous 7 days";
+  if(days < 30) return "Previous 30 days";
+  return new Date(ts).toLocaleDateString([], { month:"long", year:"numeric" });
+}
 const fmtTime = ts => new Date(ts).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
-function firstLine(messages){
-  const m = messages.find(x => x.role === "user") || messages[0];
-  return m ? clip(String(m.content).replace(/\s+/g, " "), 52) : "Conversation";
-}
-function snippetHTML(text, q){
-  const plain = String(text).replace(/\s+/g, " ");
-  const i = plain.toLowerCase().indexOf(q);
-  if(i < 0) return esc(clip(plain, 80));
-  const start = Math.max(0, i - 26);
-  return (start ? "…" : "") + esc(plain.slice(start, i)) +
-    "<mark>" + esc(plain.slice(i, i + q.length)) + "</mark>" +
-    esc(clip(plain.slice(i + q.length), 60));
-}
-/* the mark and the name follow the message's own author, so a search hit in a
-   handed-over conversation shows who actually said it */
-function histHitRow(r, m, q, attr, where){
-  const who = (m.role === "assistant" && roleById(m.speaker)) || r;
-  return `<button class="row" ${attr}>
-      ${avatarSVG(who, "", 34)}
-      <span class="k" style="font-size:14px">${snippetHTML(m.content, q)}
-        <small>${esc(who.title)} · ${m.role === "user" ? "you" : "them"} · ${esc(where)}</small></span>${CHEV}
-    </button>`;
+function whenLabel(ts){
+  const g = dayGroup(ts);
+  return g === "Today" ? fmtTime(ts)
+    : g === "Yesterday" ? "Yesterday"
+    : new Date(ts).toLocaleDateString([], { month:"short", day:"numeric" });
 }
 /* "Head of Marketing and General Counsel" — the cast of one conversation */
 function castLabel(ids){
   const names = (ids || []).map(id => roleById(id)).filter(Boolean).map(r => r.title);
-  if(names.length < 2) return "";
+  if(!names.length) return "";
+  if(names.length === 1) return names[0];
   return names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
 }
-function renderHistory(){
-  const q = ($("#histQuery").value || "").trim().toLowerCase();
-  const list = $("#histList");
-  const roles = state.roles.filter(r => (threads[r.id] || []).length || (archives[r.id] || []).length);
-  if(!roles.length){
-    list.innerHTML = `<p class="histNote">No conversations yet this session.<br>History is held in memory only — it clears when the page closes.</p>`;
+function snippetHTML(text, q){
+  const plain = String(text).replace(/\s+/g, " ");
+  const i = q ? plain.toLowerCase().indexOf(q) : -1;
+  if(i < 0) return esc(clip(plain, 70));
+  const start = Math.max(0, i - 22);
+  return (start ? "…" : "") + esc(plain.slice(start, i)) +
+    "<mark>" + esc(plain.slice(i, i + q.length)) + "</mark>" +
+    esc(clip(plain.slice(i + q.length), 46));
+}
+
+/* ---------- the list ---------- */
+const CAST_FACES = 3;
+/* `meta` is the second line, already HTML — a snippet with the search term
+   marked, or the plain who-and-when line. `titleHTML` overrides the first line
+   the same way, so a conversation matched by its NAME shows you where. */
+function convRowHTML(c, meta, titleHTML){
+  const cast = castOf(c.id);
+  const tint = deptOf(roleById(cast[0]) || roleById(c.root) || { dept:"" }).tint;
+  const faces = cast.slice(0, CAST_FACES).map(id => avatarSVG(roleById(id), "", 26)).join("") +
+    (cast.length > CAST_FACES ? `<span class="cMore">+${cast.length - CAST_FACES}</span>` : "");
+  return `<div class="cRowWrap">
+      <button class="cRow ${c.id === convId ? "on" : ""}" style="--tint:${tint}"
+        data-open="${esc(c.id)}" ${c.id === convId ? 'aria-current="true"' : ""}>
+        <span class="cFaces">${faces || avatarSVG(roleById(c.root) || state.roles[0], "", 26)}</span>
+        <span class="cText"><span class="cTitle">${titleHTML || esc(convTitle(c.id))}</span>
+          <span class="cMeta">${meta}</span></span>
+        ${c.loading ? `<span class="cSpin" aria-label="Opening"></span>` : ""}
+      </button>
+      <div class="cActs">
+        <button data-rename="${esc(c.id)}" aria-label="Rename this conversation" title="Rename">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10-4-4L4 16v4Z"/><path d="M14.5 5.5l4 4"/></svg>
+        </button>
+        <button class="danger" data-del="${esc(c.id)}" aria-label="Delete this conversation" title="Delete">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9.5 7V5h5v2M7 7l.8 12h8.4L17 7"/></svg>
+        </button>
+      </div>
+    </div>`;
+}
+/* The meta line answers "which of my conversations is this?" — who was in it,
+   how long it ran, and when it was last touched. */
+function convMeta(c){
+  const cast = castOf(c.id);
+  const who = cast.length > 1 ? castLabel(cast) : (roleById(cast[0]) || {}).title || "Removed role";
+  const n = c.loaded ? (threads[c.id] || []).filter(m => !m.note).length : c.messageCount;
+  const bits = [esc(who)];
+  if(n) bits.push(n + " message" + (n === 1 ? "" : "s"));
+  bits.push(esc(whenLabel(c.updatedAt)));
+  return bits.join(" · ");
+}
+function renderSide(){
+  if(sideState.pane !== "chats") return;
+  const list = $("#paneChats");
+  if(!list) return;
+  const q = sideState.q;
+
+  if(sideState.editing) return renderSideEditing(list);
+
+  const all = convsSorted();
+  if(q) return renderSideSearch(list, all, q);
+
+  if(!all.length){
+    list.innerHTML = `<p class="sideNote"><b>No conversations yet</b>
+      Pick someone in Team and ask them something. Every conversation is saved
+      to your Google Sheet, so it will still be here tomorrow.</p>`;
     return;
   }
-  if(q){
-    const rows = [];
-    roles.forEach(r => {
-      (threads[r.id] || []).forEach((m, i) => {
-        if(String(m.content).toLowerCase().includes(q))
-          rows.push(histHitRow(r, m, q, `data-jump="${r.id}:${i}"`, "Current"));
-      });
-      (archives[r.id] || []).forEach((c, ci) => {
-        c.messages.forEach(m => {
-          if(String(m.content).toLowerCase().includes(q))
-            rows.push(histHitRow(r, m, q, `data-arch="${r.id}:${ci}"`, "Earlier · " + fmtTime(c.at)));
-        });
+  let out = "", group = "";
+  all.forEach(c => {
+    const g = dayGroup(c.updatedAt);
+    if(g !== group){ group = g; out += `<div class="cLabel">${esc(g)}</div>`; }
+    out += c.id === sideState.confirming ? confirmRowHTML(c) : convRowHTML(c, convMeta(c));
+  });
+  list.innerHTML = out + sideFootHTML(all.length);
+}
+function confirmRowHTML(c){
+  return `<div class="cConfirm"><b>Delete “${esc(convTitle(c.id))}”?</b>
+      <button data-cancel-del>Keep</button>
+      <button class="danger" data-do-del="${esc(c.id)}">Delete</button>
+    </div>`;
+}
+function renderSideEditing(list){
+  const c = convs[sideState.editing];
+  if(!c){ sideState.editing = null; return renderSide(); }
+  const all = convsSorted();
+  let out = "", group = "";
+  all.forEach(x => {
+    const g = dayGroup(x.updatedAt);
+    if(g !== group){ group = g; out += `<div class="cLabel">${esc(g)}</div>`; }
+    out += x.id === c.id
+      ? `<div class="cEdit"><input id="cEditInput" value="${esc(convTitle(c.id))}"
+           aria-label="Conversation name" maxlength="80"></div>`
+      : convRowHTML(x, convMeta(x));
+  });
+  list.innerHTML = out + `<p class="sideFoot">Enter saves, Escape cancels.</p>`;
+  const input = $("#cEditInput");
+  if(input){ input.focus(); input.select(); }
+}
+/* The list has to say which of the two it is showing — everything in the
+   Sheet, or only what this browser happens to hold — because the difference is
+   invisible and the second one looks exactly like a short history. */
+function sideFootHTML(n){
+  if(!getToken()) return `<p class="sideFoot">Not connected to your Sheet, so these ${n}
+    conversation${n === 1 ? "" : "s"} live in this browser only. Add your access token in
+    Settings › Chat to keep them.</p>`;
+  if(historyNote) return `<p class="sideFoot">This browser's conversations only — reading the
+    rest from your Sheet failed: ${esc(historyNote.replace(/\.\s*$/, ""))}. It retries on its own.</p>`;
+  if(!sheetConnected) return `<p class="sideFoot">Loaded from this browser. The Sheet isn't
+    answering right now, so conversations saved on other devices aren't listed.</p>`;
+  return `<p class="sideFoot">${n} conversation${n === 1 ? "" : "s"}, saved in your Google Sheet.</p>`;
+}
+
+/* ---------- search ---------- */
+/* Local first, always: titles and any transcript in memory match while you
+   type. The server's pass over the Messages tab lands a moment later and adds
+   everything this browser has never held — the two are merged, newest first,
+   and a conversation matched by both is listed once. */
+function renderSideSearch(list, all, q){
+  /* Server hits are indexed first so a conversation matched both ways is listed
+     once, with the better evidence — an actual line from it — rather than
+     whichever source happened to be checked first. Only the hits belonging to
+     THIS query count: the previous query's results are still in hand while a
+     new one is in flight, and reusing them lists conversations that match
+     nothing you typed. */
+  const remote = {};
+  if(sideState.hitsFor === q) (sideState.hits || []).forEach(h => { if(h && h.id) remote[h.id] = h; });
+  const rows = [];
+  all.forEach(c => {
+    const title = convTitle(c.id);
+    const inTitle = title.toLowerCase().includes(q);
+    const local = (threads[c.id] || []).find(m => !m.note && String(m.content).toLowerCase().includes(q));
+    const hit = remote[c.id];
+    /* a snippet that no longer contains the query proves nothing — drop it */
+    const said = local ? String(local.content)
+      : (hit && String(hit.snippet || "").toLowerCase().includes(q) ? String(hit.snippet) : "");
+    if(!said && !inTitle) return;
+    rows.push(convRowHTML(c,
+      said ? snippetHTML(said, q) : convMeta(c),
+      inTitle ? snippetHTML(title, q) : null));
+  });
+  const note = sideState.loading
+    ? `<p class="sideFoot">Searching everything in your Sheet…</p>`
+    : sideState.error
+      ? `<p class="sideFoot">Searched this browser only — the Sheet said: ${esc(sideState.error)}</p>`
+      : sideState.hitsFor === q
+        ? `<p class="sideFoot">Searched every message in your Sheet.</p>`
+        : "";
+  list.innerHTML = rows.length
+    ? `<div class="cLabel">${rows.length} conversation${rows.length === 1 ? "" : "s"}</div>` + rows.join("") + note
+    : (sideState.loading ? `<p class="sideNote"><b>Searching…</b>Looking through your Sheet.</p>`
+                         : `<p class="sideNote"><b>Nothing matches that</b>${sideState.error ? esc(sideState.error) : "Try fewer words."}</p>`);
+}
+let searchTimer = null, searchGen = 0;
+function onSearchInput(){
+  sideState.q = ($("#sideQuery").value || "").trim().toLowerCase();
+  sideState.confirming = null;
+  sideState.editing = null;
+  clearTimeout(searchTimer);
+  if(!sideState.q){
+    sideState.hits = null; sideState.hitsFor = ""; sideState.loading = false; sideState.error = "";
+    renderSide();
+    return;
+  }
+  /* short queries match too much to be worth a round trip; local still runs */
+  if(sideState.q.length < 3 || !getToken()){ renderSide(); return; }
+  sideState.loading = true;
+  renderSide();
+  searchTimer = setTimeout(() => runSearch(sideState.q), 260);
+}
+async function runSearch(q){
+  const gen = ++searchGen;
+  try{
+    const data = await sheetCall({ action:"searchConversations", q, limit:60 }, { timeoutMs:20000 });
+    if(gen !== searchGen) return;                      // a newer query is already out
+    sideState.hits = data.hits || [];
+    sideState.hitsFor = q;
+    sideState.error = "";
+    /* A hit can name a conversation this browser has never seen — the summary
+       rides along on the hit so it can be listed and opened like any other. */
+    (sideState.hits || []).forEach(h => {
+      if(convs[h.id] || !h.id) return;
+      makeConv(h.personaId || (h.participantIds || [])[0] || "", {
+        id: h.id, title: h.title || "", participantIds: h.participantIds || [],
+        createdAt: Date.parse(h.startedAt) || Date.now(),
+        updatedAt: Date.parse(h.updatedAt) || Date.now(),
+        messageCount: h.messageCount || 0, remote: true, loaded: false
       });
     });
-    list.innerHTML = rows.length
-      ? `<div class="gLabel">${rows.length} match${rows.length === 1 ? "" : "es"}</div><div class="group">${rows.join("")}</div>`
-      : `<p class="histNote">Nothing matches that.</p>`;
-    return;
+  }catch(err){
+    if(gen !== searchGen) return;
+    sideState.hits = null;
+    sideState.error = String(err.message || "search failed");
+  }finally{
+    if(gen === searchGen){ sideState.loading = false; renderSide(); }
   }
-  list.innerHTML = roles.map(r => {
-    const live = threads[r.id] || [];
-    const rows = [];
-    const withWho = ids => { const l = castLabel(ids); return l ? " · with " + esc(l) : ""; };
-    if(live.length) rows.push(`<button class="row" data-live="${r.id}">
-        <span class="k">Current conversation<small>${live.length} message${live.length === 1 ? "" : "s"} · started ${fmtTime(live[0].at || Date.now())}${withWho(partsOf(r.id))}</small></span>${CHEV}
-      </button>`);
-    (archives[r.id] || []).forEach((c, ci) => rows.push(`<button class="row" data-arch="${r.id}:${ci}">
-        <span class="k">${esc(firstLine(c.messages))}<small>${c.messages.length} message${c.messages.length === 1 ? "" : "s"} · cleared ${fmtTime(c.end)}${withWho(c.participants)}</small></span>${CHEV}
-      </button>`));
-    return `<div class="gLabel">${esc(r.title)}</div><div class="group">${rows.join("")}</div>`;
-  }).join("") + `<p class="footNote">Held in memory only — closing or reloading this page clears the history.</p>`;
 }
-function renderHistView(roleId, convIdx){
-  const r = roleById(roleId);
-  const conv = (archives[roleId] || [])[convIdx];
-  if(!conv){ histGoDeep(false); return; }
-  $("#histTitle").textContent = r ? r.title : "Removed role";
-  const canRestore = r && !(threads[roleId] || []).length;
-  const speakers = (conv.participants || []).filter(roleById).length > 1;
-  $("#histView").innerHTML = `
-    <div class="histThread">${conv.messages.map(m => msgHTML(m, { speakers })).join("")}</div>
-    <div class="group" style="margin-top:10px">
-      <button class="row" data-hist-copy="${roleId}:${convIdx}"><span class="k" style="color:var(--accent)">Copy transcript</span></button>
-      ${canRestore ? `<button class="row" data-hist-restore="${roleId}:${convIdx}"><span class="k" style="color:var(--accent)">Continue this conversation</span></button>` : ""}
-    </div>
-    <p class="footNote">Read-only. ${canRestore ? "Continuing moves it back into the live chat." : "Clear the live conversation first to continue this one."}</p>`;
-  $("#histView").scrollTop = 0;
-  histGoDeep(true);
+
+/* ---------- reading the Sheet's history ---------- */
+/* One summary call. Conversations this browser already has keep their local
+   messages — they are the same conversation, and the copy in memory may hold a
+   turn the Sheet has not caught up with — but take the Sheet's title and its
+   proof that a row exists. */
+async function loadHistory(){
+  if(!getToken()) return;
+  lastHistoryRead = Date.now();
+  const data = await sheetCall({ action:"history", limit:150 }, { timeoutMs:25000 });
+  (data.conversations || []).forEach(c => {
+    if(!c || !c.id) return;
+    const cast = (c.participantIds || []).filter(Boolean);
+    const known = convs[c.id];
+    if(known){
+      if(c.title) known.title = c.title;
+      known.remote = true;
+      if(!known.loaded) known.messageCount = c.messageCount || known.messageCount;
+      if(cast.length) cast.forEach(id => joinConv(c.id, id));
+      return;
+    }
+    makeConv(c.personaId || cast[0] || "", {
+      id: c.id, title: c.title || "", participantIds: cast,
+      createdAt: Date.parse(c.startedAt) || Date.now(),
+      updatedAt: Date.parse(c.updatedAt) || Date.parse(c.startedAt) || Date.now(),
+      messageCount: c.messageCount || 0, remote: true, loaded: false
+    });
+  });
+  renderSide();
+  return data;
 }
-function transcriptOf(messages, roleTitle){
-  return messages.filter(m => !m.note)
-    .map(m => {
-      if(m.role === "user") return "You: " + displayText(m);
-      const who = roleById(m.speaker);
-      return ((who && who.title) || roleTitle || "Them") + ": " + displayText(m);
-    })
-    .join("\n\n");
-}
-function flashMessage(index){
-  const el = $("#thread").querySelectorAll(".msg")[index];
-  if(!el) return;
-  el.scrollIntoView({ block:"center" });
-  el.classList.add("hl");
-  setTimeout(() => el.classList.remove("hl"), 1800);
-}
-$("#histBtn").addEventListener("click", openHistory);
-$("#histDone").addEventListener("click", closeHistory);
-$("#histBack").addEventListener("click", () => { renderHistory(); histGoDeep(false); });
-$("#histQuery").addEventListener("input", renderHistory);
-/* History names a conversation, not just a persona — open it as itself and
-   land on whoever spoke in it last */
-const openConv = key => selectRole(lastSpeaker(key), { conv: key });
-$("#histList").addEventListener("click", e => {
-  const live = e.target.closest("[data-live]");
-  if(live){ closeHistory(); openConv(live.dataset.live); return; }
-  const jump = e.target.closest("[data-jump]");
-  if(jump){
-    const [id, idx] = jump.dataset.jump.split(":");
-    closeHistory(); openConv(id);
-    requestAnimationFrame(() => flashMessage(+idx));
-    return;
-  }
-  const arch = e.target.closest("[data-arch]");
-  if(arch){ const [id, ci] = arch.dataset.arch.split(":"); renderHistView(id, +ci); }
-});
-$("#histView").addEventListener("click", async e => {
-  const cp = e.target.closest("[data-hist-copy]");
-  if(cp){
-    const [id, ci] = cp.dataset.histCopy.split(":");
-    const r = roleById(id);
-    const conv = (archives[id] || [])[+ci];
-    if(!conv) return;
-    const label = cp.querySelector(".k");
+/* Open a conversation, fetching its transcript first if this is the first time
+   it has been looked at. The messages come back with the persona who wrote
+   each one, which is what rebuilds the cast — and therefore what lets a
+   conversation reopened weeks later keep being handed between people. */
+async function openConv(k){
+  const c = convs[k];
+  if(!c) return;
+  if(!c.loaded){
+    if(c.loading) return;
+    c.loading = true; renderSide();
     try{
-      await navigator.clipboard.writeText(transcriptOf(conv.messages, r && r.title));
-      label.textContent = "Copied";
-    }catch(err){ label.textContent = "Couldn't copy"; }
-    setTimeout(() => { if(label.isConnected) label.textContent = "Copy transcript"; }, 1400);
-    return;
+      const data = await sheetCall({ action:"transcript", interactionId:k }, { timeoutMs:25000 });
+      const msgs = (data.messages || []).map(m => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: String(m.content || ""),
+        at: Date.parse(m.at) || c.updatedAt,
+        /* the Sheet logs PersonaId on both sides of a turn: who wrote the
+           answer, and who the question was put to */
+        speaker: m.role === "assistant" ? (m.personaId || undefined) : undefined,
+        to: m.role === "user" ? (m.personaId || undefined) : undefined,
+        channel: m.channel, confidence: m.confidence
+      }));
+      threads[k] = msgs;
+      const meta = data.conversation || {};
+      const cast = (meta.participantIds || []).filter(roleById);
+      participants[k] = (cast.length ? cast : castFromMessages(msgs, c.root)).filter(Boolean);
+      if(meta.title) c.title = meta.title;
+      c.messageCount = msgs.filter(m => !m.note).length;
+      c.loaded = true;
+    }catch(err){
+      c.loading = false;
+      renderSide();
+      showBanner("<b>Couldn't open that conversation</b> — " +
+        esc(String(err.message).replace(/\.\s*$/, "")) + ". It is still in your Sheet; try again in a moment.");
+      return;
+    }
+    c.loading = false;
   }
-  const rs = e.target.closest("[data-hist-restore]");
-  if(rs){
-    const [id, ci] = rs.dataset.histRestore.split(":");
-    const conv = (archives[id] || []).splice(+ci, 1)[0];
-    if(!conv) return;
-    threads[id] = conv.messages;
-    if(conv.participants && conv.participants.length) participants[id] = conv.participants.slice();
-    Object.keys(conv.pins || {}).forEach(rid => { pinned[pinKey(id, rid)] = conv.pins[rid]; });
-    closeHistory();
-    openConv(id);
-    renderChart(); PopOut.render();
+  dropEmptyConvs(k);
+  selectRole(lastSpeaker(k), { conv: k });
+  renderSide();
+  if(innerWidth <= 900) closeMenu();
+}
+
+/* ---------- rename and delete ---------- */
+async function renameConv(k, title){
+  const c = convs[k];
+  if(!c) return;
+  const next = String(title || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  if(!next || next === c.title) return;
+  const was = c.title;
+  c.title = next;
+  renderSide();
+  if(!c.remote || !getToken()) return;         // nothing to write back yet
+  try{
+    await sheetCall({ action:"renameConversation", interactionId:k, title:next }, { timeoutMs:20000 });
+  }catch(err){
+    c.title = was;
+    renderSide();
+    showBanner("<b>That rename didn't reach the Sheet</b> — " +
+      esc(String(err.message).replace(/\.\s*$/, "")) + ". The old name is back.");
   }
+}
+/* Deleting stops a conversation being listed, here and in the Sheet, where the
+   row is marked deleted rather than removed — the messages stay logged. A
+   conversation that never reached the Sheet is only ever local, so it just goes. */
+async function deleteConv(k){
+  const c = convs[k];
+  if(!c) return;
+  const remote = c.remote && getToken();
+  const wasCurrent = k === convId;
+  const snapshot = { c, messages: threads[k], cast: participants[k] };
+  delete convs[k]; delete threads[k]; delete participants[k];
+  sideState.confirming = null;
+  if(wasCurrent){
+    const next = convsSorted()[0];
+    next ? selectRole(lastSpeaker(next.id), { conv: next.id }) : selectRole(selectedId, { conv: undefined });
+  }
+  renderSide(); renderChart(); PopOut.render();
+  if(!remote) return;
+  try{
+    await sheetCall({ action:"deleteConversation", interactionId:k }, { timeoutMs:20000 });
+  }catch(err){
+    /* put it back rather than leave the list lying about what the Sheet holds */
+    convs[k] = snapshot.c;
+    threads[k] = snapshot.messages;
+    participants[k] = snapshot.cast;
+    renderSide();
+    showBanner("<b>That delete didn't reach the Sheet</b> — " +
+      esc(String(err.message).replace(/\.\s*$/, "")) + ". The conversation is back in the list.");
+  }
+}
+
+/* ---------- wiring ---------- */
+$("#menuBtn").addEventListener("click", toggleMenu);
+$("#newChat").addEventListener("click", () => newChat(selectedId));
+$("#sideSwitch").addEventListener("click", e => {
+  const b = e.target.closest("[data-side]");
+  if(b) setSidePane(b.dataset.side);
+});
+$("#sideQuery").addEventListener("input", onSearchInput);
+$("#sideQuery").addEventListener("keydown", e => {
+  if(e.key === "Escape"){ $("#sideQuery").value = ""; onSearchInput(); }
+});
+$("#paneChats").addEventListener("click", e => {
+  const del = e.target.closest("[data-del]");
+  if(del){ sideState.confirming = del.dataset.del; sideState.editing = null; renderSide(); return; }
+  const go = e.target.closest("[data-do-del]");
+  if(go){ deleteConv(go.dataset.doDel); return; }
+  if(e.target.closest("[data-cancel-del]")){ sideState.confirming = null; renderSide(); return; }
+  const ren = e.target.closest("[data-rename]");
+  if(ren){ sideState.editing = ren.dataset.rename; sideState.confirming = null; renderSide(); return; }
+  const open = e.target.closest("[data-open]");
+  if(open) openConv(open.dataset.open);
+});
+$("#paneChats").addEventListener("keydown", e => {
+  if(!e.target.matches("#cEditInput")) return;
+  if(e.key === "Enter"){
+    const k = sideState.editing;
+    sideState.editing = null;
+    renameConv(k, e.target.value);
+  }else if(e.key === "Escape"){
+    sideState.editing = null;
+    renderSide();
+  }
+});
+$("#paneChats").addEventListener("focusout", e => {
+  /* clicking away commits, the same as Enter — losing a rename to a stray
+     click is the kind of small betrayal that stops people naming things */
+  if(!e.target.matches("#cEditInput") || !sideState.editing) return;
+  const k = sideState.editing, v = e.target.value;
+  sideState.editing = null;
+  renameConv(k, v);
+  renderSide();
+});
+$("#paneTeam").addEventListener("click", () => { if(innerWidth <= 900) closeMenu(); });
+/* The desktop rail is always open; the mobile drawer starts closed. Crossing
+   the breakpoint has to reset that, or a drawer left open on a phone becomes a
+   permanently hidden column on the desktop it was resized into. */
+addEventListener("resize", () => {
+  if(innerWidth > 900) document.body.classList.remove("menu-open");
+  $("#menuBtn").setAttribute("aria-expanded", String(
+    innerWidth > 900 ? !document.body.classList.contains("rail-off")
+                     : document.body.classList.contains("menu-open")));
 });
 
 /* =================================================================
@@ -3868,7 +4434,9 @@ const PopOut = {
     if(!this.win) return;
     const r = roleById(roleId);
     if(!r){ this.close(); return; }
-    this.convId = key || roleId;
+    /* a conversation key, never a persona id — those stopped being the same
+       thing when conversations became their own objects */
+    this.convId = (key && convs[key]) ? key : (convForRole(roleId) || makeConv(roleId).id);
     this.roleId = roleId;
     const d = deptOf(r);
     this.els.doc.title = r.title + " — " + state.company;
@@ -4673,15 +5241,15 @@ $("#back").addEventListener("click", () => { renderMain(); goDeep(false); });
 $("#scrim").addEventListener("click", () => {
   if($("#sheet").classList.contains("on")) closeSettings();
   else if($("#picker").classList.contains("on")) closePicker();
-  else if(histOpen()) closeHistory();
   else if(chartOpen()) closeChart();
+  else if(document.body.classList.contains("menu-open")) closeMenu();
 });
 addEventListener("keydown", e => {
   if(e.key !== "Escape") return;
   if($("#sheet").classList.contains("on")){ $("#panes").classList.contains("deep") ? (renderMain(), goDeep(false)) : closeSettings(); }
   else if($("#picker").classList.contains("on")) closePicker();
-  else if(histOpen()){ $("#histPanes").classList.contains("deep") ? (renderHistory(), histGoDeep(false)) : closeHistory(); }
   else if(chartOpen()) closeChart();
+  else if(document.body.classList.contains("menu-open")) closeMenu();
 });
 
 /* main pane interactions */
@@ -4807,23 +5375,20 @@ function deleteRole(){
     setTimeout(() => { armedDelete = false; if(editingId === r.id) renderRolePane(); }, 4000);
     return;
   }
-  const wasSelected = selectedId === r.id, wasConv = convId === r.id;
+  const wasSelected = selectedId === r.id;
+  /* A conversation this role started is still readable history, so it is kept —
+     it just has nobody left to answer it. Only its place in the cast goes, so
+     it stops offering itself in the bar of every conversation it was in. */
+  const orphaned = Object.keys(convs).filter(k => convs[k].root === r.id);
   state.roles = state.roles.filter(x => x.id !== r.id);
-  cancelAnswer(r.id, true);
-  delete threads[r.id];
-  delete archives[r.id];
-  /* the conversations this role was a guest in outlive it — drop it from their
-     cast so it stops appearing in the bar, and leave its messages in place */
-  delete participants[r.id];
+  orphaned.forEach(k => cancelAnswer(k, true));
   Object.keys(participants).forEach(k => {
     participants[k] = participants[k].filter(id => id !== r.id);
   });
-  if(PopOut.roleId === r.id || PopOut.convId === r.id) PopOut.close();
-  armedDelete = false; renderMain(); goDeep(false); renderChart();
-  if(wasSelected || wasConv){
-    const root = rootRole();
-    selectRole(root.id, { conv: wasConv ? root.id : convId });
-  }
+  if(PopOut.roleId === r.id || orphaned.indexOf(PopOut.convId) >= 0) PopOut.close();
+  armedDelete = false; renderMain(); goDeep(false); renderChart(); renderSide();
+  /* Standing in a conversation whose only voice just left means leaving it. */
+  if(wasSelected || !castOf(convId).length) selectRole((rootRole() || {}).id, { conv: undefined });
 }
 let armedReset = false;
 function mainAction(act, el){
@@ -4848,10 +5413,13 @@ function mainAction(act, el){
     setConnected(false);
     [...inflight.keys()].forEach(id => cancelAnswer(id, true));
     Object.keys(threads).forEach(k => delete threads[k]);
-    Object.keys(archives).forEach(k => delete archives[k]);
+    Object.keys(convs).forEach(k => delete convs[k]);
     Object.keys(participants).forEach(k => delete participants[k]);
     Object.keys(pinned).forEach(k => delete pinned[k]);
-    renderMain(); applyChrome(); renderChart(); selectRole(rootRole().id, { conv: rootRole().id });
+    convId = null;
+    renderMain(); applyChrome(); renderChart();
+    selectRole(rootRole().id, { conv: undefined });
+    renderSide();
     syncPip();
   }
 }
@@ -4867,10 +5435,12 @@ $("#importFile").addEventListener("change", e => {
       normalizeRoles();
       setConnected(false);
       /* the whole cast changed identity — conversation membership from the old
-         chart means nothing against the new one */
+         chart means nothing against the new one, so an imported chart starts a
+         conversation of its own rather than inheriting one */
       Object.keys(participants).forEach(k => delete participants[k]);
       renderMain(); goDeep(false); applyChrome(); renderChart();
-      selectRole(rootRole().id, { conv: rootRole().id });
+      selectRole(rootRole().id, { conv: makeConv(rootRole().id).id });
+      renderSide();
       syncPip();
     }catch(err){
       alert("That file isn't a chart this page can read. Export one from Settings to see the expected format.");
@@ -4932,7 +5502,14 @@ async function boot(){
   refreshAmbient();
   applyChrome();
   renderChart();
-  selectRole(rootRole().id);
+  setSidePane("chats");
+  /* Land on a new conversation with the person at the top, not inside the last
+     one that happened to be newest — reopening someone else's finished thread
+     is not what opening the app means. The history is one click away in the
+     menu beside it. */
+  selectRole(rootRole().id, { conv: makeConv(rootRole().id).id });
+  $("#menuBtn").setAttribute("aria-expanded", String(innerWidth > 900));
+  renderSide();
   if(banner) showBanner(banner);
   $("#bootVeil").classList.add("off");
 }

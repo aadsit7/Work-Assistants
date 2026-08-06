@@ -1,9 +1,27 @@
 /**
  * ============================================================================
  *  PERSONA ASSISTANT — Google Apps Script backend
- *  (rev 8 — write-back + paste-once credentials, 2026-08-05)
+ *  (rev 9 — durable conversation history, 2026-08-06)
  *  Paste this whole file into your Sheet's Apps Script editor (replace Code.gs).
  * ============================================================================
+ *
+ *  CHANGED IN REV 9 (from rev 8)
+ *    - ONE CONVERSATION IS NOW ONE ROW. The client owns the conversation id
+ *      and sends it as interactionId on every turn; a row is created only for
+ *      an id the Sheet has not seen. Before this, the client never echoed the
+ *      id back, so every single turn minted a fresh Interactions row and no
+ *      conversation existed in the Sheet as one object.
+ *    - Messages.Content now holds what the person actually typed. The
+ *      quoted-colleague context a persona was shown in a handed-over
+ *      conversation moved to its own ContextShown column, so the Messages tab
+ *      reads as the conversation it is and still records what each persona saw.
+ *    - New actions: history (list conversations, newest first), transcript
+ *      (one conversation's messages, in order, with the persona who wrote
+ *      each), renameConversation, deleteConversation (soft — Status becomes
+ *      'deleted' and it stops being listed; nothing is erased).
+ *    - Interactions gains Title and ParticipantIds; Messages gains
+ *      ContextShown. All three are optional: a Sheet without them keeps
+ *      working, and checkSetup names the ones that are missing.
  *
  *  CHANGED IN REV 8 (from rev 7)
  *    - Paste-once credentials: ANTHROPIC_API_KEY and APP_TOKEN can be pasted
@@ -86,19 +104,29 @@
  *
  *  WHAT THIS FILE DOES
  *    doPost   ping, chat, classify, config, savePersona, saveSetting,
- *             cleanup, voiceTests, voiceTestResult, runTests
+ *             cleanup, voiceTests, voiceTestResult, runTests,
+ *             history, transcript, renameConversation, deleteConversation
  *    doGet    ping and config, so you can sanity-check it in a browser
  *    Rebuilds the system prompt from the Sheet and refuses the call if the
  *    device's fingerprint does not match — a stale brief never gets answered.
- *    Logs every session to Interactions and every turn to Messages.
+ *    Logs every conversation to Interactions and every turn to Messages, and
+ *    reads them back so history outlives the browser.
  *
  *  ONE CONVERSATION, SEVERAL PERSONAS
  *  The app lets a conversation be handed from one persona to another without
- *  starting a new thread. Nothing here changes for that: each chat call still
- *  names one roleId and is answered from that persona's brief alone. What the
- *  other personas said reaches the model quoted and attributed inside a user
- *  turn, so UserText in the Messages tab records exactly what this persona was
- *  shown — including a colleague's answer, when it was given one.
+ *  starting a new thread. Each chat call still names one roleId and is answered
+ *  from that persona's brief alone. What the other personas said reaches the
+ *  model quoted and attributed inside a user turn — so every turn of a handed-
+ *  over conversation shares one InteractionId, each Messages row names the
+ *  PersonaId that wrote it, and ParticipantIds on the Interactions row lists
+ *  the whole cast in the order they joined. Content is what the person typed;
+ *  ContextShown is the colleague context that persona was additionally shown.
+ *
+ *  WHERE CONVERSATION HISTORY LIVES
+ *  Nowhere else. Interactions is the list of conversations and Messages is
+ *  their contents — there is no separate history store and no export step. The
+ *  app reads them back through the history and transcript actions, which is
+ *  why a conversation survives a reload, a new device, and a cleared browser.
  *
  * ============================================================================
  */
@@ -166,6 +194,11 @@ function doPost(e) {
     if (action === 'voiceTests')      return json_(voiceTests_());
     if (action === 'voiceTestResult') return json_(voiceTestResult_(req));
     if (action === 'runTests')        return json_(runTests_(req.personaId));
+    if (action === 'history')         return json_(history_(req));
+    if (action === 'transcript')      return json_(transcript_(req));
+    if (action === 'searchConversations') return json_(searchConversations_(req));
+    if (action === 'renameConversation') return json_(renameConversation_(req));
+    if (action === 'deleteConversation') return json_(deleteConversation_(req));
     return json_({ ok: false, error: 'Unknown action: ' + action });
 
   } catch (err) {
@@ -178,8 +211,9 @@ function doGet(e) {
   try {
     requireToken_(e);
     var action = (e && e.parameter && e.parameter.action) || 'ping';
-    if (action === 'ping')   return json_({ ok: true, message: 'Persona assistant is running.', at: nowIso_() });
-    if (action === 'config') return json_(getConfig_());
+    if (action === 'ping')    return json_({ ok: true, message: 'Persona assistant is running.', at: nowIso_() });
+    if (action === 'config')  return json_(getConfig_());
+    if (action === 'history') return json_(history_(e.parameter));
     return json_({ ok: false, error: 'Unknown action: ' + action });
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message ? err.message : err) });
@@ -251,7 +285,10 @@ function chat_(req) {
         req: req, persona: persona, built: built, model: usedModel,
         temperature: temperature, result: result, latency: latency,
         interactionId: interactionId,
-        userText: history[history.length - 1].content
+        /* the wire turn (with any colleague context quoted into it) and the
+           words the person actually typed — logTurn_ files them separately */
+        userText: history[history.length - 1].content,
+        typedText: req.userText
       });
     } catch (logErr) {
       logError_('logTurn_', logErr);   // never fail a reply because logging broke
@@ -774,6 +811,16 @@ function fetchJson_(url, options, timeoutMs) {
 
 /* ----------------------------------------------------------------- LOGGING */
 
+/**
+ * Logs one turn against the conversation it belongs to.
+ *
+ * The client owns the conversation id: it mints one when a conversation starts
+ * and sends the same value as interactionId on every turn of it, so all the
+ * turns of one conversation land on one Interactions row and the Messages rows
+ * carrying that id ARE the transcript. A row is created only for an id this
+ * Sheet has not seen before — which is also what lets an id minted while the
+ * device was offline open its own row correctly whenever it does arrive.
+ */
 function logTurn_(o) {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -781,14 +828,17 @@ function logTurn_(o) {
     var interactionId = o.interactionId;
     var now = nowIso_();
 
-    if (!interactionId) {
-      interactionId = 'int_' + uid_();
+    var existing = interactionId ? findInteraction_(interactionId) : null;
+    if (!interactionId) interactionId = 'int_' + uid_();
+    if (!existing) {
       appendByHeader_(TAB.interactions, {
         InteractionId: interactionId,
         OrgChartId: o.persona.orgChartId,
         UserId: o.req.userId || '',
         PersonaId: o.persona.id,
         PersonaTitleSnapshot: o.persona.title,
+        ParticipantIds: o.persona.id,
+        Title: conversationTitle_(o.userText),
         DeviceId: o.req.deviceId || '',
         Channel: o.req.channel || 'chat',
         StartedAt: now,
@@ -823,11 +873,19 @@ function logTurn_(o) {
       Flagged: 'FALSE'
     };
 
+    /* Content is the person's own words, so the tab reads as the conversation
+       it is and a restored transcript shows what was actually typed. The wire
+       text — the same turn plus any colleague answers quoted for this persona
+       — goes to ContextShown, which keeps "what was this persona shown?"
+       answerable without corrupting the transcript. */
+    var typed = (o.typedText === undefined || o.typedText === null || o.typedText === '')
+      ? o.userText : String(o.typedText);
     appendByHeader_(TAB.messages, merge_(base, {
       MessageId: 'msg_' + uid_(),
       Seq: seq + 1,
       MessageRole: 'user',
-      Content: o.userText,
+      Content: typed,
+      ContextShown: (typed === o.userText ? '' : o.userText),
       ContentType: o.req.channel === 'voice' ? 'voice_transcript' : 'text',
       CreatedAt: now
     }));
@@ -848,11 +906,42 @@ function logTurn_(o) {
     }));
 
     updateInteractionRollup_(interactionId, o);
+    /* history and transcript read through the same 60s table cache as
+       everything else; a turn just written has to be visible to the next read,
+       so the two tables it touched are dropped from it here. */
+    forgetTable_(TAB.interactions);
+    forgetTable_(TAB.messages);
     return interactionId;
 
   } finally {
     lock.releaseLock();
   }
+}
+
+/** The Interactions row for one conversation, or null when the Sheet has none. */
+function findInteraction_(interactionId) {
+  var sh = sheet_(TAB.interactions);
+  var head = headers_(sh);
+  var idCol = head.indexOf('InteractionId');
+  if (idCol < 0 || sh.getLastRow() < 2) return null;
+  var vals = sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues();
+  var want = String(interactionId);
+  for (var i = 0; i < vals.length; i++) {
+    if (String(vals[i][idCol]) === want) {
+      return { sheet: sh, head: head, row: i + 2, values: vals[i] };
+    }
+  }
+  return null;
+}
+
+/** A conversation names itself after its opening question. */
+function conversationTitle_(text) {
+  var t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return 'New conversation';
+  if (t.length <= 60) return t;
+  var cut = t.slice(0, 60);
+  var sp = cut.lastIndexOf(' ');
+  return (sp > 28 ? cut.slice(0, sp) : cut) + '…';
 }
 
 function countMessages_(interactionId) {
@@ -867,33 +956,44 @@ function countMessages_(interactionId) {
 }
 
 function updateInteractionRollup_(interactionId, o) {
-  var sh = sheet_(TAB.interactions);
-  var head = headers_(sh);
-  var idCol = head.indexOf('InteractionId');
-  if (idCol < 0 || sh.getLastRow() < 2) return;
-  var vals = sh.getRange(2, 1, sh.getLastRow() - 1, head.length).getValues();
+  var found = findInteraction_(interactionId);
+  if (!found) return;
+  var sh = found.sheet, head = found.head, r = found.row, row = found.values;
 
-  for (var i = 0; i < vals.length; i++) {
-    if (vals[i][idCol] !== interactionId) continue;
-    var r = i + 2;
-    var put = function (name, value) {
-      var c = head.indexOf(name);
-      if (c >= 0) sh.getRange(r, c + 1).setValue(value);
-    };
-    var num = function (name) {
-      var c = head.indexOf(name);
-      return c >= 0 ? (Number(vals[i][c]) || 0) : 0;
-    };
-    put('EndedAt', nowIso_());
-    put('MessageCount', num('MessageCount') + 2);
-    put('TotalInputTokens', num('TotalInputTokens') + (Number(o.result.inputTokens) || 0));
-    put('TotalOutputTokens', num('TotalOutputTokens') + (Number(o.result.outputTokens) || 0));
-    put('EstimatedCostUsd', estimateCost_(o.model,
-        num('TotalInputTokens') + (Number(o.result.inputTokens) || 0),
-        num('TotalOutputTokens') + (Number(o.result.outputTokens) || 0)));
-    if (String(vals[i][head.indexOf('PromptHash')] || '') !== o.built.hash) put('DriftDetected', 'TRUE');
-    return;
+  var put = function (name, value) {
+    var c = head.indexOf(name);
+    if (c >= 0) sh.getRange(r, c + 1).setValue(value);
+  };
+  var num = function (name) {
+    var c = head.indexOf(name);
+    return c >= 0 ? (Number(row[c]) || 0) : 0;
+  };
+  var cell = function (name) {
+    var c = head.indexOf(name);
+    return c >= 0 ? String(row[c] || '') : '';
+  };
+
+  put('EndedAt', nowIso_());
+  put('MessageCount', num('MessageCount') + 2);
+  put('TotalInputTokens', num('TotalInputTokens') + (Number(o.result.inputTokens) || 0));
+  put('TotalOutputTokens', num('TotalOutputTokens') + (Number(o.result.outputTokens) || 0));
+  put('EstimatedCostUsd', estimateCost_(o.model,
+      num('TotalInputTokens') + (Number(o.result.inputTokens) || 0),
+      num('TotalOutputTokens') + (Number(o.result.outputTokens) || 0)));
+  if (cell('PromptHash') !== o.built.hash) put('DriftDetected', 'TRUE');
+
+  /* The cast grows as a conversation changes hands, in the order people joined
+     — that ordering is what lets the app rebuild the same cast bar on a
+     conversation it reopens days later. */
+  var cast = cell('ParticipantIds').split(',').map(function (s) { return s.trim(); })
+             .filter(function (s) { return s; });
+  if (cast.indexOf(o.persona.id) < 0) {
+    cast.push(o.persona.id);
+    put('ParticipantIds', cast.join(','));
   }
+  /* A conversation that opened on an error has no title yet — the first turn
+     that produces one fills it in rather than leaving the row unnamed. */
+  if (!cell('Title')) put('Title', conversationTitle_(o.typedText || o.userText));
 }
 
 function estimateCost_(model, inTokens, outTokens) {
@@ -901,6 +1001,246 @@ function estimateCost_(model, inTokens, outTokens) {
   var outRate = Number(model.OutputCostPer1MUsd);
   if (isNaN(inRate) || isNaN(outRate) || (!inRate && !outRate)) return '';  // rates not filled in yet
   return Math.round(((inTokens / 1e6) * inRate + (outTokens / 1e6) * outRate) * 1e6) / 1e6;
+}
+
+/* --------------------------------------------------- CONVERSATION HISTORY
+ *  Interactions is the list of conversations; Messages is their contents. No
+ *  other store exists, so these three actions are the whole of history.
+ *
+ *    { action:"history", limit }        -> { ok, conversations:[...] }
+ *    { action:"transcript", interactionId }
+ *                                       -> { ok, conversation, messages:[...] }
+ *    { action:"searchConversations", q, limit }
+ *                                       -> { ok, hits:[{id, snippet, ...}] }
+ *    { action:"renameConversation", interactionId, title }   -> { ok, title }
+ *    { action:"deleteConversation", interactionId }           -> { ok }
+ *
+ *  history is deliberately a summary: id, title, cast, counts and times, but
+ *  no message bodies. A hundred conversations of summary is a small reply; a
+ *  hundred transcripts is not, and the app only ever shows one at a time.
+ *  Delete is a soft delete — Status becomes 'deleted' and the row stops being
+ *  listed. Nothing in this file ever erases a logged message.
+ * ---------------------------------------------------------------------- */
+
+function history_(req) {
+  var limit = Math.max(1, Math.min(Number(req && req.limit) || 100, 400));
+  var index = messageIndex_();
+  var out = [];
+
+  readTable_(TAB.interactions).forEach(function (r) {
+    var id = String(r.InteractionId || '');
+    if (!id) return;
+    if (String(r.Status || '').toLowerCase() === 'deleted') return;
+    var m = index[id] || { count: 0, personas: [], firstUser: '', lastAt: '' };
+    /* An interaction with no surviving messages is a row whose turn failed
+       before anything was logged — not a conversation anyone can open. */
+    if (!m.count) return;
+
+    var cast = String(r.ParticipantIds || '').split(',')
+      .map(function (s) { return s.trim(); }).filter(function (s) { return s; });
+    if (!cast.length) cast = m.personas.slice();
+    if (!cast.length && r.PersonaId) cast = [String(r.PersonaId)];
+
+    var started = isoOf_(r.StartedAt) || isoOf_(r.CreatedAt);
+    out.push({
+      id: id,
+      title: String(r.Title || '') || conversationTitle_(m.firstUser),
+      personaId: String(r.PersonaId || cast[0] || ''),
+      participantIds: cast,
+      channel: String(r.Channel || 'chat'),
+      messageCount: m.count,
+      startedAt: started,
+      updatedAt: m.lastAt || isoOf_(r.EndedAt) || started,
+      /* Timestamps here are second-granular, so two conversations touched in
+         the same second tie — and an untimestamped row ties with every other
+         one. Row order breaks it: rows are appended, so a later row is the
+         newer conversation. Without this the list falls back to sheet order,
+         which is oldest-first: exactly backwards. */
+      _row: out.length
+    });
+  });
+
+  out.sort(function (a, b) {
+    if (a.updatedAt !== b.updatedAt) return a.updatedAt < b.updatedAt ? 1 : -1;
+    return b._row - a._row;
+  });
+  return {
+    ok: true,
+    conversations: out.slice(0, limit).map(function (c) { delete c._row; return c; }),
+    total: out.length
+  };
+}
+
+function transcript_(req) {
+  var id = String((req && (req.interactionId || req.conversationId)) || '').trim();
+  if (!id) return { ok: false, error: 'interactionId is required.' };
+
+  var rows = readTable_(TAB.messages).filter(function (m) {
+    return String(m.InteractionId || '') === id;
+  });
+  rows.sort(function (a, b) { return (Number(a.Seq) || 0) - (Number(b.Seq) || 0); });
+
+  var meta = null;
+  readTable_(TAB.interactions).forEach(function (r) {
+    if (String(r.InteractionId || '') === id) meta = r;
+  });
+  if (!rows.length && !meta) return { ok: false, error: 'No conversation with id ' + id + '.' };
+
+  var cast = meta ? String(meta.ParticipantIds || '').split(',')
+                      .map(function (s) { return s.trim(); })
+                      .filter(function (s) { return s; })
+                  : [];
+
+  return {
+    ok: true,
+    conversation: {
+      id: id,
+      title: meta ? (String(meta.Title || '') || conversationTitle_(firstUserOf_(rows))) : conversationTitle_(firstUserOf_(rows)),
+      personaId: meta ? String(meta.PersonaId || '') : '',
+      participantIds: cast,
+      startedAt: meta ? (isoOf_(meta.StartedAt) || isoOf_(meta.CreatedAt)) : ''
+    },
+    messages: rows.map(function (m) {
+      var role = String(m.MessageRole || '') === 'assistant' ? 'assistant' : 'user';
+      var conf = Number(m.TranscriptConfidence);
+      return {
+        role: role,
+        content: String(m.Content || ''),
+        personaId: String(m.PersonaId || ''),
+        at: isoOf_(m.CreatedAt),
+        channel: String(m.ContentType || '') === 'voice_transcript' ? 'voice' : 'chat',
+        confidence: isNaN(conf) || !m.TranscriptConfidence ? undefined : conf
+      };
+    })
+  };
+}
+
+/**
+ * Full-text search over every message ever logged.
+ *
+ * The app matches titles and any transcript it already holds on its own; this
+ * is for the rest, which is most of it — the text of a conversation had last
+ * month on another device exists only in the Messages tab. One hit per
+ * conversation (the first match), with enough summary riding along that the app
+ * can list and open a conversation it has never seen.
+ */
+function searchConversations_(req) {
+  var q = String((req && req.q) || '').toLowerCase().trim();
+  if (!q) return { ok: true, hits: [] };
+  var limit = Math.max(1, Math.min(Number(req && req.limit) || 60, 200));
+
+  /* Deleted conversations must not surface in search either — that would be a
+     delete that only hid the row from one list. */
+  var dropped = {}, meta = {};
+  readTable_(TAB.interactions).forEach(function (r) {
+    var id = String(r.InteractionId || '');
+    if (!id) return;
+    if (String(r.Status || '').toLowerCase() === 'deleted') dropped[id] = true;
+    meta[id] = r;
+  });
+
+  var hits = [];
+  var seen = {};
+  readTable_(TAB.messages).forEach(function (m) {
+    if (hits.length >= limit) return;
+    var id = String(m.InteractionId || '');
+    if (!id || seen[id] || dropped[id]) return;
+    var text = String(m.Content || '');
+    if (text.toLowerCase().indexOf(q) < 0) return;
+    seen[id] = true;
+    var r = meta[id] || {};
+    var cast = String(r.ParticipantIds || '').split(',')
+      .map(function (s) { return s.trim(); }).filter(function (s) { return s; });
+    hits.push({
+      id: id,
+      snippet: snippetAround_(text, q),
+      role: String(m.MessageRole || '') === 'assistant' ? 'assistant' : 'user',
+      personaId: String(r.PersonaId || m.PersonaId || ''),
+      participantIds: cast,
+      title: String(r.Title || ''),
+      messageCount: Number(r.MessageCount) || 0,
+      startedAt: isoOf_(r.StartedAt) || isoOf_(r.CreatedAt),
+      updatedAt: isoOf_(r.EndedAt) || isoOf_(m.CreatedAt)
+    });
+  });
+  return { ok: true, hits: hits, query: q };
+}
+
+/**
+ * Enough text around a match to recognise it, without shipping the message.
+ * The whitespace is collapsed BEFORE the match is located: finding the offset
+ * in the raw text and then slicing the collapsed text shifts the window by
+ * however much whitespace preceded the match, which can slide the matched
+ * words out of the snippet entirely — and the app re-finds the query in this
+ * string to highlight it, so a snippet that has lost the term shows nothing.
+ */
+function snippetAround_(text, q) {
+  var plain = String(text).replace(/\s+/g, ' ').trim();
+  var at = plain.toLowerCase().indexOf(String(q).toLowerCase());
+  if (at < 0) return plain.slice(0, 120);
+  var start = Math.max(0, at - 40);
+  var end = at + String(q).length + 80;
+  return (start ? '…' : '') + plain.slice(start, end) + (end < plain.length ? '…' : '');
+}
+
+function renameConversation_(req) {
+  var id = String((req && req.interactionId) || '').trim();
+  var title = conversationTitle_((req && req.title) || '');
+  if (!id) return { ok: false, error: 'interactionId is required.' };
+  var found = findInteraction_(id);
+  if (!found) return { ok: false, error: 'No conversation with id ' + id + '.' };
+  var c = found.head.indexOf('Title');
+  if (c < 0) return { ok: false, error: 'The Interactions tab has no Title column — add one to rename conversations.' };
+  var was = String(found.values[c] || '');
+  found.sheet.getRange(found.row, c + 1).setValue(title);
+  forgetTable_(TAB.interactions);
+  audit_(req, 'interaction', id, 'rename', 'Title', was, title);
+  return { ok: true, interactionId: id, title: title };
+}
+
+function deleteConversation_(req) {
+  var id = String((req && req.interactionId) || '').trim();
+  if (!id) return { ok: false, error: 'interactionId is required.' };
+  var found = findInteraction_(id);
+  if (!found) return { ok: false, error: 'No conversation with id ' + id + '.' };
+  var c = found.head.indexOf('Status');
+  if (c < 0) return { ok: false, error: 'The Interactions tab has no Status column.' };
+  var was = String(found.values[c] || '');
+  found.sheet.getRange(found.row, c + 1).setValue('deleted');
+  forgetTable_(TAB.interactions);
+  audit_(req, 'interaction', id, 'delete', 'Status', was, 'deleted');
+  return { ok: true, interactionId: id };
+}
+
+/**
+ * One pass over Messages, grouped by conversation: how many turns it holds,
+ * its opening question, who has answered in it, and when it last moved. Built
+ * once per history call rather than per conversation, which is the difference
+ * between one table read and one per row.
+ */
+function messageIndex_() {
+  var by = {};
+  readTable_(TAB.messages).forEach(function (m) {
+    var k = String(m.InteractionId || '');
+    if (!k) return;
+    var e = by[k] || (by[k] = { count: 0, personas: [], firstUser: '', lastAt: '' });
+    e.count++;
+    var role = String(m.MessageRole || '');
+    var text = String(m.Content || '');
+    if (!e.firstUser && role === 'user' && text) e.firstUser = text;
+    var at = isoOf_(m.CreatedAt);
+    if (at > e.lastAt) e.lastAt = at;
+    var p = String(m.PersonaId || '');
+    if (p && role === 'assistant' && e.personas.indexOf(p) < 0) e.personas.push(p);
+  });
+  return by;
+}
+
+function firstUserOf_(rows) {
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i].MessageRole || '') === 'user') return String(rows[i].Content || '');
+  }
+  return '';
 }
 
 /* ------------------------------------------------------------------ CONFIG */
@@ -1309,6 +1649,11 @@ function clearCache_() {
   Object.keys(TAB).forEach(function (k) { c.remove('tbl_' + TAB[k]); });
 }
 
+/** Drops one table from the cache, so the next read of it sees a fresh Sheet. */
+function forgetTable_(name) {
+  try { CacheService.getScriptCache().remove('tbl_' + name); } catch (e) {}
+}
+
 /** Appends a row by header name, so adding columns later cannot shift your data. */
 function appendByHeader_(name, obj) {
   var sh = sheet_(name);
@@ -1387,6 +1732,22 @@ function nowIso_() {
   return Utilities.formatDate(new Date(), 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
 }
 
+/**
+ * A timestamp cell as a comparable ISO string, whichever way it reached us.
+ * getValues() hands back a Date for a date-formatted cell and a string for a
+ * plain one — and readTable_'s cache round-trips through JSON, which turns the
+ * Date into a string. So the SAME cell has two possible types depending only
+ * on whether the cache was warm. Sorting history by a mix of the two silently
+ * mis-orders it; everything that reads a timestamp goes through here.
+ */
+function isoOf_(v) {
+  if (v === '' || v === null || v === undefined) return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return isNaN(v.getTime()) ? '' : Utilities.formatDate(v, 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+  }
+  return String(v);
+}
+
 function uid_() {
   return Utilities.getUuid().replace(/-/g, '').slice(0, 12);
 }
@@ -1460,6 +1821,26 @@ function checkSetup() {
   var clf = modelById_(setting_('classifier_model_id', 'mdl_claude_haiku'));
   report.push('Classifier model: ' + (clf ? clf.DisplayName : 'none enabled — falls back to the default model'));
 
+  /* Conversation history needs three columns that older Sheets don't have.
+     Each one degrades on its own rather than breaking anything, so this
+     reports what is missing and what that costs instead of failing. */
+  var missingCols = [];
+  [[TAB.interactions, 'Title', 'conversations are named after their opening question instead of a name you can edit'],
+   [TAB.interactions, 'ParticipantIds', 'a reopened conversation rebuilds its cast from who answered in it, not from the join order'],
+   [TAB.messages, 'ContextShown', 'the colleague context a persona was shown is not kept']
+  ].forEach(function (spec) {
+    var sh = book_().getSheetByName(spec[0]);
+    if (sh && headers_(sh).indexOf(spec[1]) < 0) missingCols.push('  NOTE: ' + spec[0] + ' has no ' + spec[1] + ' column — ' + spec[2] + '.');
+  });
+  if (missingCols.length) {
+    report.push('Conversation history: working, with ' + missingCols.length + ' optional column(s) missing.');
+    missingCols.forEach(function (m) { report.push(m); });
+  } else {
+    report.push('Conversation history: all columns present.');
+  }
+  var convs = history_({ limit: 400 });
+  report.push('Stored conversations: ' + (convs.total || 0));
+
   report.push(verifyPromptParity().message);
   report.unshift(ok ? 'READY' : 'NOT READY — fix the items below');
   Logger.log(report.join('\n'));
@@ -1532,6 +1913,31 @@ function testCleanup() {
   });
   Logger.log(JSON.stringify(out, null, 2));
   return out;
+}
+
+/**
+ * Lists what the app's history sidebar will show, then opens the newest
+ * conversation. Run this after a redeploy to prove history reads end to end
+ * without touching the web app: an empty list with chats in the Messages tab
+ * means the turns were logged without a shared InteractionId (a client older
+ * than rev 9), not that reading is broken.
+ */
+function testHistory() {
+  var list = history_({ limit: 20 });
+  Logger.log('conversations: ' + (list.total || 0));
+  (list.conversations || []).forEach(function (c) {
+    Logger.log('  ' + c.updatedAt + '  ' + c.messageCount + ' msg  [' +
+               c.participantIds.join(' → ') + ']  ' + c.title);
+  });
+  var first = (list.conversations || [])[0];
+  if (!first) return list;
+  var t = transcript_({ interactionId: first.id });
+  Logger.log('--- ' + first.title + ' ---');
+  (t.messages || []).forEach(function (m) {
+    Logger.log((m.role === 'user' ? 'You' : (m.personaId || 'them')) + ': ' +
+               String(m.content).replace(/\s+/g, ' ').slice(0, 120));
+  });
+  return { list: list, transcript: t };
 }
 
 /** Prints the exact prompt for one persona. Read it before trusting a role. */
