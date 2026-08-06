@@ -28,7 +28,7 @@ page, open it on a different device, clear the browser — the list is the same.
 4. Deploy → New deployment → type **Web app**, Execute as **Me**, Who has
    access **Anyone**. Deploy, then copy the URL ending in `/exec`.
 
-### Three columns conversation history uses
+### Five columns the Sheet can grow into
 
 Add these to an existing Sheet — put the header in the first empty column of the
 tab, which appends it without moving anything. A Sheet without them still works;
@@ -39,6 +39,12 @@ each one just costs the thing next to it, and `checkSetup` says which are absent
 | `Interactions` | `Title` | Conversations are named after their opening question and can't be renamed |
 | `Interactions` | `ParticipantIds` | A reopened conversation rebuilds its cast from who answered in it, rather than from the order people joined |
 | `Messages` | `ContextShown` | The colleague context a persona was shown in a handed-over conversation isn't kept |
+| `KnowledgeSources` | `SourceUrl` | A source added as a website URL keeps its label but loses its link |
+| `KnowledgeSources` | `Content` | A source added as pasted text keeps its label but loses the text |
+
+The last two are the only ones the app will tell you about while you use it: a
+save that had to drop a link or a body says so in a banner, naming the column
+to add, rather than reporting a clean save over a partial one.
 
 `Messages.Content` holds what you typed. When a conversation has changed hands,
 the colleague answers that persona was *additionally* shown go in `ContextShown`,
@@ -166,6 +172,61 @@ around today, and the whole exchange stays on the one row it started on.
 Picking someone from the chart or the outline still opens the conversation you
 were having with *them*; only people already in the current conversation stay in
 it when you click them.
+
+## What an answer looks like
+
+Every persona is briefed to answer in three sections, and the page renders them
+as three sections rather than as the markdown they arrive in:
+
+- **Question** — one line restating what was asked, so you can see which
+  reading you got before you read the answer to it.
+- **Answer** — the conclusion first, then the working. Bullets are bullets,
+  tables are tables, and anything that can't wrap — a table, a block of code —
+  scrolls inside its own box so the conversation never does.
+- **Sources** — what the answer rests on, one per line, listed so it can be
+  checked. Where a persona is giving you its own read rather than something it
+  can point at, that line says so instead of naming a source it invented.
+
+Nothing is padded to fill a section, so a one-sentence answer is still one
+sentence. Both halves of this live in the brief itself — `[ANSWER FORMAT]` —
+which is why the server can rebuild it and check the fingerprint. A format the
+page applied on its own would be rejected as a stale brief.
+
+## Answers you hear are written to be heard
+
+The brief's `[SPOKEN ANSWER]` section asks for a second, spoken version after a
+`===SPOKEN===` marker: one to three sentences, contractions, no headings, no
+bullets, no URLs — what the persona would actually say to you rather than the
+document read aloud. The page shows the half above the marker and speaks the
+half below it, so turning the speaker on doesn't change what you read.
+
+When a reply arrives without a marker, the spoken fallback reads the Answer
+section only. The restatement and the source list are dropped, because
+"Question. Sources." is not a thing anyone says.
+
+## Knowledge sources: links and text, not just labels
+
+Settings → a persona → **Knowledge sources** is where a persona's reference
+material is edited, and a source is one of three things:
+
+- **Label** — a name and nothing else ("CRM opportunity records"). What every
+  source was before, and what a Sheet row with no link and no body still reads
+  as. Nothing had to be migrated.
+- **Website URL** — a link the persona may read. Name it or don't; an unnamed
+  one shows as its address.
+- **Text** — the material itself, pasted, as many lines as you like. It goes
+  into the brief verbatim under its own label, indented, so the persona can see
+  where the pasted material starts and stops.
+
+**+ Add a source** starts at that fork — URL or text — and you can add as many
+of either as you like. The list is ordered and the order is the priority the
+prompt prints, so ↑ moves a source up the persona's reading list. ✎ edits one
+in place; ✕ removes it from the persona and soft-archives the row in the Sheet,
+which is why nothing a logged answer cited ever disappears.
+
+One source is one Sheet cell, so one holds 45,000 characters. Paste more than
+that and the editor says so and asks you to split it, rather than letting the
+end be cut off somewhere you can't see.
 
 ## Voice accuracy
 
