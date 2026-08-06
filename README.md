@@ -64,6 +64,31 @@ token also works when the endpoint hasn't changed.) Once connected, personas,
 settings, and conversation logs sync both ways automatically, on the cadence
 the Sheet's `sync_interval_seconds` setting defines.
 
+## What "both directions" actually covers
+
+Everything you can change in Settings is written back to the Sheet, on a short
+pause after you stop typing:
+
+| What you change | Where it lands |
+| --- | --- |
+| Any field of a brief, the mark, the team, the knowledge sources | That persona's `Personas` row, and `KnowledgeSources` |
+| **Add a role** | A new `Personas` row, created the moment you add it, keeping the id the app minted |
+| **Remove this role** | `Status` on that row becomes `archived` — nothing is erased, and the conversations it answered in still name it |
+| Company name, subtitle, page heading, intro line | The `OrgCharts` row |
+| Theme, accent, reporting lines, mark animation | The same row |
+
+Two rules make this safe to lean on. A write that fails for weather — a cold
+start, a dropped network, a redeploy landing mid-request — **retries on its own**
+rather than dropping the edit; only a rejected token or a genuine conflict with
+another device stops it, and both say so in a banner. And a background read
+**never overwrites something this browser hasn't saved yet**: an edit made a
+moment ago, or a role added a moment ago, survives every sync tick until the
+Sheet confirms it.
+
+Removing a role is refused while another role reports to it, in the app and in
+the Sheet both — the chart is drawn from `ParentPersonaId`, so the subtree under
+it would simply disappear. Move the reports first.
+
 ## When it isn't connecting
 
 The dot in the header is the whole answer: lit means personas and settings
@@ -72,7 +97,10 @@ needs only the token, so it keeps working either way — which is why a
 disconnected page can still answer questions and log them to the Sheet while
 nothing you edit reaches it. Everything below that dot follows from it:
 background sync and persona write-back run only while it is lit, and an edit
-made while it is unlit stays in the browser and says so in a banner.
+made while it is unlit stays in the browser and says so in a banner. Adding a
+role is the one thing an unlit page refuses outright rather than accepting and
+losing: a new role only exists once the Sheet has a row for it, so there is
+nothing honest to do with a brief written against a row that was never made.
 
 Your past conversations are on the lit side of that line, since reading them
 means reading the Sheet. An unlit page lists only what this browser has said in
