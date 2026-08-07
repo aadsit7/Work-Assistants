@@ -1767,13 +1767,25 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
 
 <script>
 /* ========== data ========== */
-/* Base URL of the Apps Script web app.
+/* THE DEPLOYMENT THIS PAGE TALKS TO, COMMITTED
 
-   Every Apps Script re-deploy that creates a NEW deployment mints a new /exec
-   URL, so the constant below is only the default. Settings › Chat accepts the
-   full Web app URL (with or without ?token=...) pasted straight from the
-   deploy dialog: the app splits it into an endpoint override (localStorage,
-   key "pa_endpoint") and the token, and targets that deployment from then on. */
+   This is not a default that a browser has to be talked into: it is where
+   every copy of this page points, on every machine, from the first frame,
+   with nothing typed and nothing remembered. A laptop that has never opened
+   the app before is already aimed at the right deployment — which is the
+   whole reason the URL lives in the file rather than in one browser's
+   localStorage.
+
+   Settings › Chat still accepts a full Web app URL pasted from the deploy
+   dialog, but what that buys is a local detour — one browser, pointed
+   somewhere else, for as long as that makes sense (a staging deployment, a
+   redeploy you haven't committed yet). It is stored under "pa_endpoint" with
+   a stamp of the built-in it was pasted against, so the moment this constant
+   changes the detour is dropped and the browser comes back here. Overrides
+   expire; the commit is the standing answer.
+
+   After a re-deploy that mints a new /exec URL, edit this line. That single
+   edit moves every browser, including the ones still holding the old URL. */
 const SHEET_ENDPOINT = "https://script.google.com/macros/s/AKfycbzowjBwMMSEWcDHW7Z94Ga-57iacv8tOoirSQp4hGJBshvUnWrnn7thKwvzCvmk9_mM/exec";
 
 /* =================================================================
@@ -1812,6 +1824,11 @@ const SHEET_TOKEN = "";
 
 const TOKEN_KEY = "pa_token";
 const ENDPOINT_KEY = "pa_endpoint";
+/* Which SHEET_ENDPOINT the override in ENDPOINT_KEY was pasted against. An
+   override with no stamp, or a stamp naming a URL this file no longer holds,
+   is stale by definition — see getEndpoint(). */
+const ENDPOINT_BASE_KEY = "pa_endpoint_for";
+const EXEC_URL = /^https:\/\/script\.google\.com\/.+\/exec$/;
 
 /* Correction pass for dictated text, applied to every final transcript before
    it reaches the composer. Speech-to-text errors are rarely literal, so
@@ -2368,18 +2385,57 @@ function usingBuiltInToken(){
   try{ if((localStorage.getItem(TOKEN_KEY) || "").trim()) return false; }catch(e){}
   return !!String(SHEET_TOKEN || "").trim();
 }
+/* SHEET_ENDPOINT is the floor, exactly the way SHEET_TOKEN is: a browser that
+   has never been told anything still targets the right deployment, so the
+   answer to "why does it connect on my desktop and not my laptop?" can never
+   be the URL again.
+
+   An override only survives while it is still answering a question the commit
+   isn't. It is stamped with the built-in it was pasted against, and a stamp
+   that no longer matches means this file has moved on since — so the override
+   is deleted on sight rather than quietly outranking a URL that was shipped
+   later. Legacy overrides carry no stamp and are dropped the same way, which
+   is the one-time cost of a browser healing itself. */
+/* Declared here rather than beside fallBackToBuiltInEndpoint, which is where
+   it is read: setEndpoint writes it, and setEndpoint runs at parse time via
+   adoptTokenFromURL — a `let` further down the file would still be in its
+   temporal dead zone by then. */
+let endpointFallbackTried = false;
+function clearEndpointOverride(){
+  try{
+    localStorage.removeItem(ENDPOINT_KEY);
+    localStorage.removeItem(ENDPOINT_BASE_KEY);
+  }catch(e){}
+}
 function getEndpoint(){
   try{
     const v = (localStorage.getItem(ENDPOINT_KEY) || "").trim();
-    if(/^https:\/\/script\.google\.com\/.+\/exec$/.test(v)) return v;
+    if(!v) return SHEET_ENDPOINT;
+    if(!EXEC_URL.test(v) || v === SHEET_ENDPOINT){ clearEndpointOverride(); return SHEET_ENDPOINT; }
+    if((localStorage.getItem(ENDPOINT_BASE_KEY) || "").trim() !== SHEET_ENDPOINT){
+      clearEndpointOverride();
+      return SHEET_ENDPOINT;
+    }
+    return v;
   }catch(e){}
   return SHEET_ENDPOINT;
 }
+/* Storing the built-in as an override is storing nothing: it would pin this
+   browser to today's URL and make the next commit unable to move it. */
 function setEndpoint(v){
+  const ep = String(v || "").trim();
+  if(!ep || ep === SHEET_ENDPOINT) return clearEndpointOverride();
   try{
-    v && v.trim() ? localStorage.setItem(ENDPOINT_KEY, v.trim()) : localStorage.removeItem(ENDPOINT_KEY);
+    localStorage.setItem(ENDPOINT_KEY, ep);
+    localStorage.setItem(ENDPOINT_BASE_KEY, SHEET_ENDPOINT);
   }catch(e){}
+  /* Someone just chose this URL, in this session. The automatic fall-back is
+     for overrides that were already sitting in the browser when the page
+     loaded; throwing away a URL a second after it was typed would read as the
+     paste not having worked. Let this one fail out loud instead. */
+  endpointFallbackTried = true;
 }
+const usingBuiltInEndpoint = () => getEndpoint() === SHEET_ENDPOINT;
 /* The one field in Settings › Chat takes either form: a bare token, or the
    full Web app URL pasted straight from Apps Script's deploy dialog —
    optionally with ?token=... on the end, which is how the server's own setup
@@ -2393,7 +2449,10 @@ function applyTokenInput(raw){
       const u = new URL(v);
       const ep = u.origin + u.pathname;
       if(!/\/exec$/.test(ep)) return { kind:"badUrl" };
-      setEndpoint(ep === SHEET_ENDPOINT ? "" : ep);
+      /* setEndpoint stores nothing when the paste is the built-in URL, so
+         pasting the deploy dialog's own link leaves the browser on the commit
+         rather than pinning it to today's copy of it. */
+      setEndpoint(ep);
       const t = (u.searchParams.get("token") || "").trim();
       if(t) setToken(t);
       return { kind: t ? "urlWithToken" : "urlOnly", endpoint: ep, token: t || getToken() };
@@ -4872,14 +4931,17 @@ function renderMain(){
           <input class="ta oneline" type="password" data-token placeholder="Token, or https://script.google.com/…/exec?token=…" value="${esc(getToken())}" autocomplete="off" spellcheck="false" aria-label="Access token or Web app URL">
         </div>
         <div class="row"><span class="k" style="font-size:14px;color:var(--label2)">Status<small id="epStatus">${connStatusText()}</small></span></div>
-        ${getEndpoint() !== SHEET_ENDPOINT ? `<button class="row" data-endpoint-reset>
-          <span class="k" style="color:var(--accent)">Use the built-in endpoint again<small style="overflow-wrap:anywhere">Currently: ${esc(getEndpoint())}</small></span>
-        </button>` : ""}
+        <div class="row"><span class="k" style="font-size:14px;color:var(--label2)">Web app URL<small style="overflow-wrap:anywhere">${esc(getEndpoint())}${usingBuiltInEndpoint()
+          ? " — built into this page, so every browser opens already pointed at it. Nothing to paste."
+          : " — saved in this browser only, and dropped as soon as the built-in URL changes."}</small></span></div>
+        ${usingBuiltInEndpoint() ? "" : `<button class="row" data-endpoint-reset>
+          <span class="k" style="color:var(--accent)">Use the built-in URL again<small style="overflow-wrap:anywhere">${esc(SHEET_ENDPOINT)}</small></span>
+        </button>`}
       </div>
       <p class="footNote">${usingBuiltInToken()
-        ? "This page carries its own token, so every browser that opens it is connected without any setup. Anything you paste here overrides that for this browser only; clearing the field falls back to the built-in one rather than disconnecting."
-        : "Paste either the bare token, or the whole <code>/exec</code> URL from Apps Script's deploy dialog (with <code>?token=…</code> on the end if you like) — the app splits it and remembers both in this browser."}
-        You can also connect a device without ever typing here, by opening the page once with <code>#token=YOUR_TOKEN</code> on the end of the URL: it is saved and wiped from the address bar. After a re-deploy that mints a new <code>/exec</code> URL, paste the new one here. Keep the Anthropic key in Script Properties, never in this page.</p>
+        ? "This page carries its own URL and its own token, so every browser that opens it is connected without any setup. Anything you paste here overrides that for this browser only; clearing the field falls back to the built-in one rather than disconnecting."
+        : "The Web app URL above is built in — you never have to type it on a new machine. What this field is for is the access token: paste the bare token, or the whole <code>/exec</code> URL from Apps Script's deploy dialog with <code>?token=…</code> on the end, and the app splits it and remembers both in this browser."}
+        You can also connect a device without ever typing here, by opening the page once with <code>#token=YOUR_TOKEN</code> on the end of the URL: it is saved and wiped from the address bar. After a re-deploy that mints a new <code>/exec</code> URL, change <code>SHEET_ENDPOINT</code> in <code>index.html</code> — that moves every browser at once, including any still holding an old URL pasted here. Keep the Anthropic key in Script Properties, never in this page.</p>
     </section>
 
     <section class="sect">
@@ -5359,6 +5421,37 @@ const RETRY_WAITS = [5000, 10000, 20000, 40000, 60000];
    weather and retried. */
 const NEEDS_A_HUMAN = /token|no personas in the Sheet/i;
 let retryTimer = null, retryAt = 0, connecting = false;
+
+/* A browser holding an override that has stopped answering used to sit there
+   failing at it, with the working URL sitting in this very file, unread. A
+   failure that names the URL as the problem is now enough to drop it and try
+   the committed endpoint instead — no banner to read, nothing to re-paste.
+
+   "Names the URL as the problem" is the whole of it, and it is deliberately
+   narrow: a 4xx, or an HTML page where JSON belongs — a deleted deployment's
+   404, or a sign-in redirect from access that isn't set to Anyone. A timeout
+   or a dead network says nothing about the URL. Apps Script cold starts run
+   past the timeout routinely, and the committed URL would fail an offline
+   device in exactly the same way, so treating those as evidence would throw
+   away a deliberately chosen staging deployment for being slow. A rejected
+   token can't reach here either: Apps Script answers everything with HTTP
+   200, so that arrives as {ok:false} and the built-in URL would give the
+   identical answer.
+
+   Once per page load. If neither URL answers, the second failure settles into
+   the ordinary backoff instead of alternating between them forever.
+
+   endpointFallbackTried lives up with the endpoint helpers — setEndpoint sets
+   it, and setEndpoint can run before this line is reached. */
+const WRONG_ENDPOINT = err =>
+  !!err && (err.code === "BAD_RESPONSE" || /^HTTP 4\d\d$/.test(String(err.message || "")));
+function fallBackToBuiltInEndpoint(err){
+  if(endpointFallbackTried || usingBuiltInEndpoint()) return false;
+  if(!WRONG_ENDPOINT(err)) return false;
+  endpointFallbackTried = true;
+  clearEndpointOverride();
+  return true;
+}
 function stopRetrying(){ clearTimeout(retryTimer); retryTimer = null; retryAt = 0; }
 function scheduleRetry(bump = true){
   clearTimeout(retryTimer);
@@ -5389,6 +5482,17 @@ async function connectNow(){
     setStatus(connStatusText());
   }catch(err){
     setConnected(false);
+    /* Before treating this as weather: if a saved override is what just
+       failed, the built-in URL has not been tried yet and is one attempt
+       away. renderMain() first — it rebuilds #epStatus, so a status set
+       before it would be thrown away. */
+    if(fallBackToBuiltInEndpoint(err)){
+      renderMain();
+      setStatus("That saved Web app URL didn't answer — falling back to the one built into this page…");
+      retryAt = 0;
+      retryTimer = setTimeout(connectNow, 400);
+      return;
+    }
     /* Retry what time can fix, and only that. A rejected token is a standing
        answer, not a blip: retrying it every minute would spend the Apps
        Script execution quota on a request that cannot start succeeding until
@@ -8158,7 +8262,7 @@ $("#paneMain").addEventListener("click", e => {
   if(epr){
     setEndpoint("");
     renderMain();
-    if($("#epStatus")) $("#epStatus").textContent = "Back on the built-in endpoint — connecting…";
+    if($("#epStatus")) $("#epStatus").textContent = "Back on the URL built into this page — connecting…";
     scheduleReconnect();
     return;
   }
@@ -8455,17 +8559,33 @@ async function boot(){
       lastWarm = Date.now();          // the config call itself warms the deployment
       await loadFromSheet();
     }catch(err){
+      let failed = err;
+      /* Boot is exactly where a stale saved URL surfaces: this browser has
+         been carrying one since some earlier deployment, and this is the
+         first request that has had a chance to notice. Drop it and try the
+         URL this file ships with before saying anything — a machine that was
+         only ever stranded on an old override then finishes booting
+         connected, with no banner and nothing to re-paste. Boot does not go
+         through connectNow, so the fall-back has to be asked for here too,
+         and waiting for the first retry would put a wrong banner on screen
+         for five seconds. */
+      if(fallBackToBuiltInEndpoint(failed)){
+        try{ await loadFromSheet(); }
+        catch(err2){ failed = err2; }
+      }
       /* a token IS set, so "add your access token" would misdirect — lead
          with what actually failed, in the server's own words. This is no
          longer the only attempt: the retry chain keeps going underneath,
          so the banner promises a retry instead of demanding a reload, and
          clears itself the moment one succeeds. */
-      if(!NEEDS_A_HUMAN.test(err.message)) scheduleRetry();
-      banner = "<b>Couldn't load from your Sheet</b> — running on built-in sample data" +
-        (retryTimer ? ", retrying in the background" : "") + ". The Sheet said: " +
-        esc(String(err.message).replace(/\.\s*$/, "")) + "." +
-        (err.code === "TIMEOUT" ? " The deployment was cold or unreachable." :
-         /token/i.test(err.message) ? " If it keeps failing, re-paste the access token in Settings › Chat — it must match the one in the Apps Script's Script Properties." : "");
+      if(!sheetConnected){
+        if(!NEEDS_A_HUMAN.test(failed.message)) scheduleRetry();
+        banner = "<b>Couldn't load from your Sheet</b> — running on built-in sample data" +
+          (retryTimer ? ", retrying in the background" : "") + ". The Sheet said: " +
+          esc(String(failed.message).replace(/\.\s*$/, "")) + "." +
+          (failed.code === "TIMEOUT" ? " The deployment was cold or unreachable." :
+           /token/i.test(failed.message) ? " If it keeps failing, re-paste the access token in Settings › Chat — it must match the one in the Apps Script's Script Properties." : "");
+      }
     }
   }else{
     banner = SAMPLE_BANNER;

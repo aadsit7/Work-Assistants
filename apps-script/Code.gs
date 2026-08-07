@@ -139,14 +139,21 @@
  *         Who has access:   Anyone
  *     Deploy, then copy the URL ending in /exec.
  *
- *  5. In the web app: Settings > Chat. Paste the full URL with your token on
- *     the end — the app splits it into the endpoint and the token and
- *     remembers both in that browser:
+ *  5. Put that URL into SHEET_ENDPOINT near the top of index.html and commit
+ *     it. That is where the web app reads it from, on every machine, so no
+ *     browser ever has to be told the URL — and a later re-deploy that mints
+ *     a new /exec URL is the same one-line edit, which also dislodges any old
+ *     URL a browser is still holding.
+ *
+ *  6. The token is the only per-browser step left. In the web app:
+ *     Settings > Chat, paste either the bare APP_TOKEN or the full URL with
+ *     the token on the end — a URL is split into the endpoint and the token:
  *
  *         https://script.google.com/macros/s/AKfyc.../exec?token=YOUR_APP_TOKEN
  *
- *     (Pasting just the bare token also works when the endpoint hasn't
- *     changed.) One paste per device is all it takes.
+ *     One paste per device. To skip even that, put APP_TOKEN into
+ *     SHEET_TOKEN in index.html — but read the warning above that constant
+ *     first: on a public page it is a published credential.
  *
  *  WHY THE TOKEN MATTERS
  *  "Who has access: Anyone" means exactly that — anyone holding the URL can POST

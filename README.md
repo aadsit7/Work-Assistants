@@ -27,6 +27,11 @@ page, open it on a different device, clear the browser — the list is the same.
    optional columns below that your Sheet is missing.
 4. Deploy → New deployment → type **Web app**, Execute as **Me**, Who has
    access **Anyone**. Deploy, then copy the URL ending in `/exec`.
+5. Put that URL into `SHEET_ENDPOINT` near the top of `index.html` and commit
+   it. Every browser reads the URL from there, so no machine ever has to be
+   told it — and the same one-line edit is how you move them all after a
+   later re-deploy. The token is the only per-browser step left; see
+   [Connecting is not something you do](#connecting-is-not-something-you-do).
 
 ### Six columns the Sheet can grow into
 
@@ -54,14 +59,51 @@ persona actually see?"
 
 ## Connecting is not something you do
 
-The token is the only thing standing between the page and the Sheet, and it
-used to live in exactly one place: `localStorage`, in whichever browser had
-been told about it. That made *connected* a property of a device rather than
-of the app — every new laptop, phone, profile, private window, or cleared
-site-data landed you back on sample data with a banner asking you to go and
-paste something.
+Reaching the Sheet takes two things — **where** to send the request and **what
+credential** to send with it — and neither of them should be a thing you type
+on a new machine.
 
-There are now three places a token can come from, tried in order. The app is
+### Where: the URL is committed
+
+`SHEET_ENDPOINT`, near the top of `index.html`, is the deployment every copy of
+this page talks to. It is not a default a browser has to be talked into: a
+laptop that has never opened the app before is already pointed at the right
+`/exec` URL, from the first frame, with nothing stored and nothing pasted.
+
+Settings › Chat still takes a full Web app URL, and what that buys is a *local
+detour* — one browser aimed somewhere else while a staging deployment or an
+uncommitted redeploy is worth looking at. A detour is never permanent:
+
+- It is stamped with the built-in URL it was pasted against. Change
+  `SHEET_ENDPOINT` and every stamp stops matching, so the detour is dropped on
+  sight and the browser comes back to the committed URL. **One edit to that
+  line moves every machine**, including ones still holding a URL pasted months
+  ago. Overrides expire; the commit is the standing answer.
+- Pasting the built-in URL stores nothing at all, so the deploy dialog's own
+  link can't quietly pin a browser to today's copy of it.
+- If a saved detour answers in a way that names *the URL* as the problem — a
+  4xx, or an HTML page where JSON belongs, which is what a deleted deployment
+  and a sign-in redirect look like — the app drops it and tries the committed
+  URL by itself, once per page load, on the boot request rather than five
+  seconds into the retry chain. A machine stranded on a dead deployment heals
+  without anyone being told to go and clear something. A timeout or a dead
+  network is deliberately **not** enough: Apps Script cold starts run past the
+  timeout routinely, and a slow staging deployment should not be thrown away
+  for being slow.
+
+Settings › Chat shows the URL actually in use, and whether it is the built-in
+one. After a re-deploy that mints a new `/exec` URL, edit `SHEET_ENDPOINT`
+rather than pasting into each browser.
+
+### What: three places a token can come from
+
+The token is the part that genuinely used to live in exactly one place:
+`localStorage`, in whichever browser had been told about it. That made
+*connected* a property of a device rather than of the app — every new laptop,
+phone, profile, private window, or cleared site-data landed you back on sample
+data with a banner asking you to go and paste something.
+
+There are now three places it can come from, tried in order. The app is
 connected if **any** of them answers:
 
 | | Where | What it costs you |
@@ -154,8 +196,10 @@ Three things turn it off, in rough order of how often they do:
   Apps Script's **Project Settings → Script Properties**. Read it there rather
   than inventing a new one; a new one has to be re-pasted everywhere.
 - **The deployment moved.** A brand-new deployment mints a new `/exec` URL
-  while the old one keeps answering stale code. Paste the current URL from
-  Deploy → Manage deployments.
+  while the old one keeps answering stale code. Copy the current URL from
+  Deploy → Manage deployments into `SHEET_ENDPOINT` in `index.html`; that is
+  the change that reaches every browser at once. Pasting it into Settings ›
+  Chat fixes the browser in front of you and nothing else.
 
 A failed read is not final. The app retries on its own — 5s, 10s, 20s, 40s,
 then every minute — and retries immediately when you return to the tab or the
