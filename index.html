@@ -371,13 +371,35 @@ body.no-lines .tree ul ul::before{border-color:transparent}
    per-persona rules in #voiceCSS — never by classes on the SVG nodes, which
    any render() would destroy. Everything here is the state-independent base.
    Mark rules are scoped under .avatar: the nav logo <img> also carries the
-   class "mark", and must not pick up the breathe animation. */
-.avatar{display:block;overflow:visible;transition:transform .35s var(--spring)}
+   class "mark", and must not pick up anything meant for a persona's mark.
+
+   THE BREATH IS ON THE <svg>, NOT ON THE <g> INSIDE IT
+
+   Breathing used to animate `transform` on the .mark group inside each
+   SVG. A transform on an SVG child cannot be handed to the compositor —
+   Chromium re-runs style, paint and raster for that mark on the main
+   thread, every frame, for every mark on the page. There are two of
+   every persona on screen at once (the rail and the chart) and a third
+   in Settings, so at forty roles that is ~85 marks repainting at 60Hz
+   and a main thread that never gets a quiet frame. It is why the app
+   felt sticky no matter how little work a click actually did.
+
+   The <svg> itself is an ordinary replaced element, so the same
+   animation on it composites. It is written as `scale` — the standalone
+   transform property, not a scale() inside `transform` — so the hover
+   lift below keeps `transform` to itself and the two compose instead of
+   overwriting each other. Scaling the whole mark by 1.025 about its own
+   centre is what scaling the group by 1.025 about the same centre was:
+   the motion is unchanged, it just stopped costing the main thread.
+   The per-persona stagger rides along, moved onto the <svg> in
+   avatarSVG(); on the group it would now delay nothing. */
+.avatar{display:block;overflow:visible;transition:transform .35s var(--spring);
+  animation:breathe 5.2s ease-in-out infinite}
 .node:hover .avatar,.oRow:hover .avatar{transform:translateY(-2px) scale(1.04)}
-.avatar .mark{transform-box:fill-box;transform-origin:50% 50%;animation:breathe 5.2s ease-in-out infinite}
+.avatar .mark{transform-box:fill-box;transform-origin:50% 50%}
 .avatar .wave rect{transform-box:fill-box;transform-origin:50% 50%}
 .avatar .ring{opacity:0}
-@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.025)}}
+@keyframes breathe{0%,100%{scale:1}50%{scale:1.025}}
 /* speaking — bars move independently, staggered */
 @keyframes talk{from{transform:scaleY(.28)}to{transform:scaleY(1.32)}}
 /* listening — collapse to a pulsing centre + expanding ring */
@@ -387,12 +409,51 @@ body.no-lines .tree ul ul::before{border-color:transparent}
 @keyframes think{0%,60%,100%{transform:scaleY(1)}30%{transform:scaleY(.42)}}
 /* frozen states keep their static shape: bars at the signature, listening as
    the collapsed centre — only the motion goes */
-body.no-motion .avatar .mark,body.no-motion .avatar .wave rect,body.no-motion .avatar .ring{animation:none!important}
+body.no-motion .avatar,body.no-motion .avatar .wave rect,body.no-motion .avatar .ring{animation:none!important}
 @media (prefers-reduced-motion:reduce){
-  .avatar .mark,.avatar .wave rect,.avatar .ring,.ambientDot{animation:none!important}
+  .avatar,.avatar .wave rect,.avatar .ring,.ambientDot{animation:none!important}
   .mic.listening::after,.speak.pulse::after{animation:none!important;opacity:.6;transform:scale(1.1)}
   *{transition-duration:.01ms!important}
 }
+
+/* =================================================================
+   A MARK ONLY BREATHES WHERE IT CAN BE SEEN
+
+   Breathing is idle decoration, and idle decoration that nobody is
+   looking at is pure cost — worse than pure cost, because a page with
+   something animating on it can never let a backdrop-filter settle
+   (see .scrim). Three surfaces are hidden, and one of them was the
+   reason the app got heavier the longer it was used:
+
+     · A CLOSED SHEET KEEPS ITS MARKUP. Settings, the picker and the
+       chart overlay are rendered once and then hidden with opacity and
+       pointer-events — the roles inside them stay in the document,
+       breathing, for the rest of the session. Opening Settings and the
+       picker once each took a fresh page from 30 marks to 56, and
+       every one of the 26 added was invisible from the moment it was
+       drawn. That is a ratchet: the app was slowest for the person who
+       had used it most, which is exactly how it was reported.
+     · The stage, whenever a sheet is over it. The settings sheet is
+       inset:0 and opaque at desktop widths and a 94dvh drawer on a
+       phone, so the chart, the rail and the card behind it are not
+       visible in any sense. The chart overlay and the picker are the
+       same story one layer up, when Settings is over them.
+     · The half of .panes that is slid off-screen. .panes is 200% wide
+       and carries both panes side by side, so the list keeps animating
+       while you are in a brief and the brief keeps animating while you
+       are in the list — always exactly one full pane of marks nobody
+       can see.
+
+   Paused rather than removed: animation-play-state holds the mark at
+   the phase it had, so coming back does not restart every mark in
+   unison and lose the stagger.
+================================================================= */
+.sheet:not(.on) .avatar,
+body.covered .stage .avatar,
+body.settings-up #picker .avatar,
+body.settings-up #chartOverlay .avatar,
+#panes:not(.deep) #paneRole .avatar,
+#panes.deep #paneMain .avatar{animation-play-state:paused}
 
 /* ---------- role card ---------- */
 .scrim{
@@ -400,6 +461,19 @@ body.no-motion .avatar .mark,body.no-motion .avatar .wave rect,body.no-motion .a
   transition:opacity .4s ease; -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px);
 }
 .scrim.on{opacity:1;pointer-events:auto}
+/* A backdrop-filter is re-evaluated whenever anything on the page animates —
+   not only what is behind it, and not only what is visible. Full-screen, at
+   60Hz, that is the single most expensive thing this page can be asked to do,
+   and with Settings open it was being asked constantly. The .covered rule
+   above removes the animation that provoked it; this removes the other half of
+   the pairing, in the one case where the blur is provably not on screen: at
+   desktop widths #sheet is inset:0 with an opaque background, so the scrim
+   behind it cannot be seen at all. Every case where the scrim IS visible — the
+   role picker, the chart overlay, the phone drawer's top strip — keeps its
+   blur exactly as it was. */
+@media (min-width:901px){
+  body.settings-up .scrim{-webkit-backdrop-filter:none;backdrop-filter:none}
+}
 .card{
   flex:1 1 auto;min-width:0;position:relative;z-index:2;
   background:var(--card);
@@ -518,7 +592,8 @@ body.dark .chip{color:color-mix(in srgb, var(--tint) 78%, #fff)}
   display:flex;flex-direction:column;overflow:hidden;
   left:50%;top:50%;width:min(560px,calc(100vw - 40px));height:min(760px,calc(100dvh - 80px));
   border-radius:26px;transform:translate(-50%,-46%) scale(.96);opacity:0;pointer-events:none;
-  transition:transform .5s var(--spring),opacity .3s ease;
+  /* .38s, not .5s — see .panes below */
+  transition:transform .38s var(--spring),opacity .26s ease;
 }
 .sheet.on{transform:translate(-50%,-50%);opacity:1;pointer-events:auto}
 .sheetNav{
@@ -530,7 +605,14 @@ body.dark .chip{color:color-mix(in srgb, var(--tint) 78%, #fff)}
 .navAct{font-size:16px;color:var(--accent);display:flex;align-items:center;gap:3px;min-width:74px}
 .navAct.right{justify-content:flex-end;font-weight:600}
 .navAct[hidden]{visibility:hidden;display:flex}
-.panes{display:flex;width:200%;flex:1;min-height:0;transition:transform .45s var(--spring)}
+/* The push into a brief and back is the most-repeated motion in the app — you
+   go through it once per role you look at. At .45s the click took just over
+   half a second to finish, which is a long time to be held still when all you
+   did was pick a name off a list. .3s keeps the same spring, and the same
+   sense of the list sliding aside; it just stops making you wait out the
+   flourish every time. (Purely a timing judgement — the two durations here and
+   on .sheet are the only taste in this change, and either reverts on its own.) */
+.panes{display:flex;width:200%;flex:1;min-height:0;transition:transform .3s var(--spring)}
 .panes.deep{transform:translateX(-50%)}
 .pane{width:50%;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 16px calc(40px + env(safe-area-inset-bottom,0px))}
 .gLabel{
@@ -2552,9 +2634,12 @@ function avatarSVG(role, cls, size){
   const rects = bars.map((hgt, i) =>
     `<rect x="${x0 + i * (W + GAP)}" y="${50 - hgt / 2}" width="${W}" height="${hgt}" rx="${W/2}" fill="${tint}"/>`
   ).join("");
+  /* The stagger sits on the <svg>, which is where the breath now is — a delay
+     on the group would delay nothing, and every mark on the page would rise
+     and fall in unison. */
   return `<svg class="avatar ${cls || ""}" width="${size}" height="${size}" viewBox="0 0 100 100"
-      data-role="${esc(id)}" aria-hidden="true">
-    <g class="mark" style="animation-delay:${d}s">
+      data-role="${esc(id)}" aria-hidden="true" style="animation-delay:${d}s">
+    <g class="mark">
       <rect class="ring" x="2" y="2" width="96" height="96" rx="30" fill="none" opacity="0"
             stroke="${tint}" stroke-width="3" style="transform-box:fill-box;transform-origin:50% 50%"/>
       <rect x="6" y="6" width="88" height="88" rx="26" fill="${shell}"
@@ -4485,6 +4570,26 @@ function showPane(pane){
     b.setAttribute("aria-pressed", String(b.dataset.pane === pane)));
 }
 
+/* =================================================================
+   WHAT IS COVERED, AS A FACT THE STYLESHEET CAN READ
+
+   Two rules need to know whether a sheet is over the stage: the marks
+   behind it stop breathing, and — where the sheet is provably opaque
+   over the whole viewport — the scrim stops carrying a live blur. CSS
+   cannot ask "is any of these three elements open", so the answer is
+   written onto <body> by the one function every open and close calls.
+
+   Read from the DOM rather than counted, because the three sheets open
+   and close independently and a counter would drift the first time two
+   of them overlapped.
+================================================================= */
+function syncCovered(){
+  const settings = $("#sheet").classList.contains("on");
+  document.body.classList.toggle("settings-up", settings);
+  document.body.classList.toggle("covered",
+    settings || $("#picker").classList.contains("on") || $("#chartOverlay").classList.contains("on"));
+}
+
 /* Desktop chart overlay: the tree's only home on desktop. #chartWrap moves
    between its (hidden) rail slot and the overlay so IDs stay unique and the
    zoom wiring travels with it; the swap back waits out the close transition. */
@@ -4495,6 +4600,7 @@ function openChart(){
   $("#chartHost").appendChild($("#chartWrap"));
   $("#chartOverlay").classList.add("on");
   $("#scrim").classList.add("on");
+  syncCovered();
   autoFit();
   setTimeout(() => $("#chartClose").focus(), 380);
 }
@@ -4503,6 +4609,7 @@ function closeChart(){
   $("#chartOverlay").classList.remove("on");
   if(!$("#sheet").classList.contains("on") && !$("#picker").classList.contains("on") &&
      !document.body.classList.contains("menu-open")) $("#scrim").classList.remove("on");
+  syncCovered();
   chartRestoreTimer = setTimeout(() => $("#chartPane").appendChild($("#chartWrap")), 340);
   $("#viewChart").focus();
 }
@@ -4859,12 +4966,14 @@ function openPicker(mode){
   renderPicker();
   $("#picker").classList.add("on");
   $("#scrim").classList.add("on");
+  syncCovered();
   if(innerWidth > 900) setTimeout(() => $("#pickerQuery").focus(), 380);
 }
 function closePicker(){
   $("#picker").classList.remove("on");
   if(!$("#sheet").classList.contains("on") && !chartOpen() &&
      !document.body.classList.contains("menu-open")) $("#scrim").classList.remove("on");
+  syncCovered();
 }
 
 /* ========== settings plumbing ========== */
@@ -4874,11 +4983,13 @@ function openSettings(roleId){
   if(roleId){ editingId = roleId; renderRolePane(); goDeep(true); } else { goDeep(false); }
   $("#sheet").classList.add("on");
   $("#scrim").classList.add("on");
+  syncCovered();
 }
 function closeSettings(){
   VoiceTest.leave();
   $("#sheet").classList.remove("on");
   $("#scrim").classList.remove("on");
+  syncCovered();
   /* Leaving Settings is the moment to stop waiting out a typing pause, and the
      moment the chart and card become visible again — so anything they skipped
      while they were covered is drawn now. */
@@ -6297,11 +6408,14 @@ body.collapsed .badgeView{display:flex}
 }
 .handoffPill .avatar{width:18px;height:18px;display:block;flex:none}
 .handoffPill b{font-weight:700}
-.avatar .mark{transform-box:fill-box;transform-origin:50% 50%;animation:breathe 5.2s ease-in-out infinite}
+/* Same breath as the main document, and on the <svg> for the same reason —
+   avatarSVG() is shared, so the stagger arrives on the <svg> here too. */
+.avatar{animation:breathe 5.2s ease-in-out infinite}
+.avatar .mark{transform-box:fill-box;transform-origin:50% 50%}
 .avatar .wave rect{transform-box:fill-box;transform-origin:50% 50%}
 .avatar .ring{opacity:0}
-@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.025)}}
-@media (prefers-reduced-motion:reduce){.avatar .mark{animation:none}}
+@keyframes breathe{0%,100%{scale:1}50%{scale:1.025}}
+@media (prefers-reduced-motion:reduce){.avatar{animation:none}}
 `;
 const PopOut = {
   win:null, convId:null, roleId:null, collapsed:false, missed:0, els:null, dict:null, _nT:null,
