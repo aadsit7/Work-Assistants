@@ -1,0 +1,81 @@
+# Publish the page to GitHub Pages with the access token already in it, so a
+# browser that has never opened the app opens it connected.
+#
+# This workflow does nothing at all until you opt in, deliberately: GitHub's
+# own Pages build keeps deploying exactly as it does today, and no run here
+# fails or turns anything red. Switching it on is three one-time steps, in
+# this order — the last one is what actually hands deployment over:
+#
+#   1. Settings > Secrets and variables > Actions > Secrets > New repository
+#      secret, named APP_TOKEN, holding the same value as APP_TOKEN in the
+#      Apps Script's Project Settings > Script Properties. Read it from there
+#      rather than inventing one; a new value has to be re-pasted everywhere.
+#
+#   2. The Variables tab beside it > New repository variable, named
+#      PAGES_VIA_ACTIONS, set to true. That is the switch this file reads.
+#
+#   3. Settings > Pages > Build and deployment > Source > GitHub Actions.
+#
+# Do step 3 last. Until it is done GitHub's built-in Pages build owns the
+# site, and the deploy step here would have nothing to publish to.
+#
+# To back out, set PAGES_VIA_ACTIONS to false and put Settings > Pages >
+# Source back to "Deploy from a branch". The page returns to asking each
+# browser for the token once.
+#
+# UNDERSTAND WHAT YOU ARE PUBLISHING. The deployed page carries the token, so
+# anyone who can load the Pages URL can read and write the Sheet behind it and
+# spend the Anthropic key it proxies. A static page has no other way to hold a
+# credential. What this workflow avoids is the *second* exposure — the token
+# never enters the repository or its history, so code search, secret scanners
+# and anyone browsing the repo never see it, and rotating it is a change to
+# the secret rather than a history rewrite.
+
+name: Deploy Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Read-only on the repo; the Pages deploy gets its own scoped grants.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never run two deploys at once, and let a newer push supersede an in-flight
+# one — but finish a deploy already publishing rather than leaving the site
+# half-written.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # The opt-in switch. `vars` is one of the few contexts allowed in a
+    # job-level `if`; `secrets` is not, which is why the switch is a variable
+    # and the credential is a secret.
+    if: vars.PAGES_VIA_ACTIONS == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Put the access token into the page
+        env:
+          APP_TOKEN: ${{ secrets.APP_TOKEN }}
+        run: python3 .github/scripts/inject-token.py index.html
+
+      - uses: actions/configure-pages@v5
+
+      # The whole site is the repository as-is, with index.html now carrying
+      # the token. No build step: this is one file plus a logo.
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

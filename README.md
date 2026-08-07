@@ -110,20 +110,55 @@ connected if **any** of them answers:
 | --- | --- | --- |
 | 1 | `localStorage` — pasted into Settings › Chat | One paste, per browser |
 | 2 | The URL — `#token=…` or `?token=…` | One visit, per device |
-| 3 | `SHEET_TOKEN` in `index.html` | Nothing, ever |
+| 3 | `SHEET_TOKEN` in the published `index.html` | Nothing, ever |
 
-**Layer 3 is the one that makes it automatic.** Fill the constant near the top
-of `index.html` with your `APP_TOKEN` and there is no first-run step left at
-all: any browser that can open the page opens it connected. Read the value
-from Apps Script → Project Settings → **Script Properties** → `APP_TOKEN`
-rather than inventing a new one.
+**Layer 3 is the one that removes the last per-browser step.** With the
+constant filled, any browser that can open the page opens it connected —
+nothing typed, nothing remembered, nothing to do on a new laptop.
 
-Understand what you are trading. That constant is a real credential in a file
-anyone who can load the page can read, so on a public GitHub Pages site it
-means whoever finds the page can read and write the Sheet behind it and spend
-the Anthropic key it proxies. That is the right trade for a workspace page
-whose URL you keep to yourself and the wrong one for a page you hand out.
-Rotating it is one edit here plus `APP_TOKEN` in Script Properties.
+### Filling layer 3 without putting the token in the repository
+
+Committing the constant works and is one edit, but on a public repository it
+puts a live credential into the history permanently, where code search and
+secret scanners will find it, and rotating it means rewriting history.
+
+`.github/workflows/pages.yml` does the same job at deploy time instead. It
+substitutes `SHEET_TOKEN` from a repository **secret** while building the
+Pages site, so the token lives in GitHub's secret store and nowhere else: the
+working tree stays clean, `git log` never learns it, and rotating is a change
+to the secret plus `APP_TOKEN` in Script Properties.
+
+It is inert until you switch it on. Three one-time steps, **in this order**:
+
+1. **Settings → Secrets and variables → Actions → Secrets →** new repository
+   secret named `APP_TOKEN`, holding the same value as `APP_TOKEN` in Apps
+   Script → Project Settings → **Script Properties**. Read it from there
+   rather than inventing one; a new value has to be re-pasted everywhere.
+2. **The Variables tab beside it →** new repository variable named
+   `PAGES_VIA_ACTIONS`, set to `true`. That is the switch the workflow reads.
+3. **Settings → Pages → Build and deployment → Source → GitHub Actions.**
+
+Step 3 goes last: until it is done, GitHub's built-in Pages build still owns
+the site and the workflow's deploy step would have nothing to publish to. To
+back out, set `PAGES_VIA_ACTIONS` to `false` and put the Pages source back to
+*Deploy from a branch*.
+
+With no secret set the workflow publishes the page byte-for-byte unchanged, so
+a half-finished setup degrades to exactly today's behaviour rather than to a
+broken site.
+
+### What you are trading, either way
+
+The published page carries the token. That is not a shortcoming of the
+workflow — it is what "opens connected" means, and a static page with no
+server of its own has no other way to hold a credential. So **anyone who can
+load the Pages URL can read and write the Sheet behind it and spend the
+Anthropic key it proxies.** Deploy-time injection removes the *second*
+exposure, the repository and its history; it cannot remove the first.
+
+That is the right trade for a workspace page whose URL you keep to yourself,
+and the wrong one for a page you hand out. If it is the wrong trade, stay on
+layer 2: `#token=…` connects a device permanently and publishes nothing.
 
 **Layer 2 is how you connect a device without publishing anything.** Open
 
