@@ -285,8 +285,13 @@ body.rail-off .navTitle{display:flex}
   flex:1;min-width:0;font-size:13.5px;font-weight:400;letter-spacing:0;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
+.oNick{
+  flex:none;max-width:40%;font-size:11.5px;color:var(--label3);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
 .oRow.is-selected{background:var(--sel);color:#fff}
 .oRow.is-selected .oTitle{font-weight:700}
+.oRow.is-selected .oNick{color:rgba(255,255,255,.78)}
 .oBadge{
   min-width:18px;height:18px;padding:0 5px;border-radius:9px;flex:none;
   background:var(--danger);color:#fff;font-size:10.5px;font-weight:700;
@@ -349,6 +354,14 @@ body.no-lines .tree ul ul::before{border-color:transparent}
   font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--tint);
 }
 .node .title{font-size:13.5px;font-weight:600;letter-spacing:-.012em;line-height:1.25}
+/* The chart answers "who does what", so the ROLE stays the line you read and
+   the nickname sits under it as the name to call them by — which is where you
+   learn it. The chat inverts this on purpose: there you are talking to a
+   person, so the name leads and the role qualifies it. */
+.node .nodeNick{
+  margin-top:-5px;max-width:100%;font-size:11.5px;font-weight:600;letter-spacing:-.005em;
+  color:var(--label3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
 .node .avatar{width:62px;height:62px}
 .root-node{width:158px}
 .root-node .avatar{width:74px;height:74px}
@@ -533,7 +546,10 @@ body.dark .chip{color:color-mix(in srgb, var(--tint) 78%, #fff)}
 button.row{transition:background .15s}
 button.row:active{background:var(--field)}
 .row .k{font-size:16px;letter-spacing:-.01em;flex:1;min-width:0}
+/* the role, next to a nickname that has taken the name slot in a list row */
+.row .k .kRole{margin-left:7px;font-size:12.5px;color:var(--label3);letter-spacing:0}
 .row .k small{display:block;font-size:12.5px;color:var(--label2);margin-top:2px;line-height:1.35}
+.row .k small .warn{color:var(--danger);font-weight:600}
 .row .v{font-size:15px;color:var(--label2);max-width:52%;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row .avatar{width:34px;height:34px;flex:none}
 #pickerList .row .avatar{width:56px;height:56px}
@@ -796,7 +812,12 @@ body.no-motion .spinner{animation-duration:1.6s}
 .mHead{display:flex;align-items:baseline;gap:8px;margin-bottom:1px}
 .msg.cont .mHead{display:none}
 .whoName{font-size:15px;font-weight:900;letter-spacing:-.01em;color:var(--label)}
-.mTime{font-size:12px;color:var(--label3)}
+/* The role, under a nickname. Quiet enough that the name stays the thing you
+   read, present enough that you never have to ask who Dana is. Shrinks before
+   the name does on a narrow column, and disappears rather than wrapping. */
+.whoRole{font-size:12.5px;font-weight:600;letter-spacing:-.005em;color:var(--label3);
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mTime{font-size:12px;color:var(--label3);flex:none}
 .bubble{
   max-width:100%;padding:0;border-radius:0;background:none;
   font-size:15px;line-height:1.46;letter-spacing:0;
@@ -1244,7 +1265,7 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
     border-bottom:0;overflow:hidden;
   }
   #paneRole .briefGroup > .briefWide{grid-column:1/-1}
-  #paneRole .briefHead{display:grid;grid-template-columns:1fr 1fr}
+  #paneRole .briefHead{display:grid;grid-template-columns:1fr 1fr 1fr}
   #paneRole .briefHead > .row{border-bottom:0}
   #paneRole .briefHead > .row + .row{border-left:.5px solid var(--sep)}
   #paneRole .briefGroup .ta{min-height:184px}
@@ -1751,12 +1772,20 @@ const PickStats = { finals: 0, nonTop: 0 };
 const wordRe = t => new RegExp("\\b" + escRe(String(t).trim()).replace(/\s+/g, "\\s+") + "\\b", "i");
 const CAPS_TERM = /\b[A-Z][A-Za-z0-9'’-]*(?:\s+[A-Z][A-Za-z0-9'’-]*)+/g;
 function roleLexicon(role){
-  const key = role.id + "|" + (role.version || 1) + "|" + role.dept + "|" + vocabGen;
+  /* The nickname is part of the key, not just the contents: it is edited in
+     Settings and takes effect before the save that bumps `version` comes back,
+     and a name the ear has not been told about is the one word in the sentence
+     that must not be mis-heard. */
+  const key = role.id + "|" + (role.version || 1) + "|" + role.dept + "|" +
+              (role.nickname || "") + "|" + vocabGen;
   const hit = lexCache.get(key);
   if(hit) return hit;
   const terms = new Set();
   VOCAB_RULES.forEach(r => terms.add(r.value));
   if(role.title) terms.add(String(role.title).trim());
+  /* Weighted like any other vocabulary term, which is what makes an engine
+     offering both "Dana" and "Donna" pick the colleague who is in the room. */
+  if(role.nickname) terms.add(String(role.nickname).trim());
   const d = deptOf(role);
   if(d.name) terms.add(d.name);
   (String(role.context || "") + "\n" + String(role.task || "")).replace(CAPS_TERM, t => { terms.add(t.trim()); return t; });
@@ -1777,7 +1806,7 @@ const castLexCache = new Map();
 function castLexicon(cast){
   const roles = (cast || []).map(roleById).filter(Boolean);
   if(roles.length < 2) return roles.length ? roleLexicon(roles[0]) : { terms: [], away: [] };
-  const key = roles.map(r => r.id + "." + (r.version || 1)).join("|") + "|" + vocabGen;
+  const key = roles.map(r => r.id + "." + (r.version || 1) + "." + (r.nickname || "")).join("|") + "|" + vocabGen;
   const hit = castLexCache.get(key);
   if(hit) return hit;
   /* keyed by the term itself, so the same word carried by two personas is one
@@ -1869,7 +1898,7 @@ const DEFAULTS = {
   lines:true,
   motion:true,
   roles:[
-    { id:"ceo", parent:null, dept:"exec", title:"Chief Executive",
+    { id:"ceo", parent:null, dept:"exec", title:"Chief Executive", nickname:"Sam",
       look:{style:1},
       personality:"Calm and decisive. Allergic to hedging — asks for the one number that would change the decision.",
       context:"Northwind Cloud sells workforce analytics to mid-market IT teams. $42M ARR, 640 customers, 210 employees, one funding round left before profitability.",
@@ -1877,14 +1906,14 @@ const DEFAULTS = {
       knowledge:["Board deck archive","Quarterly OKRs","Weekly metrics digest","Cash flow model"],
       outcome:"A one-page Monday memo: what changed, what we're betting on, what we stopped." },
 
-    { id:"mktg", parent:"ceo", dept:"marketing", title:"Head of Marketing",
+    { id:"mktg", parent:"ceo", dept:"marketing", title:"Head of Marketing", nickname:"Priya",
       look:{style:2},
       personality:"Restless and data-first. Reads copy out loud, kills campaigns without ceremony.",
       context:"Marketing sources 55% of pipeline. Buyers are IT directors at 200–2,000 seat companies who find us through peer communities, not ads.",
       task:"Plan and defend the quarterly demand mix, and hand Sales a pipeline number they can forecast against.",
       knowledge:["Campaign history","Pipeline model","Win/loss interviews","Brand voice guide"],
       outcome:"A weekly pipeline read naming the two campaigns to fund further and the one to cut." },
-    { id:"demand", parent:"mktg", dept:"marketing", title:"Demand Generation Manager",
+    { id:"demand", parent:"mktg", dept:"marketing", title:"Demand Generation Manager", nickname:"Theo",
       look:{style:0},
       personality:"Meticulous and quietly competitive. Checks the UTM before the headline.",
       context:"Runs paid search, review sites, and the webinar program on a $95K monthly budget.",
@@ -1892,14 +1921,14 @@ const DEFAULTS = {
       knowledge:["Ad account exports","Attribution dashboard","ICP definition","Webinar attendance"],
       outcome:"A campaign scorecard with spend, sourced pipeline, and the next test already queued." },
 
-    { id:"sales", parent:"ceo", dept:"sales", title:"VP of Sales",
+    { id:"sales", parent:"ceo", dept:"sales", title:"VP of Sales", nickname:"Dana",
       look:{style:0},
       personality:"Direct and coachable. Unimpressed by happy ears; runs the number every morning.",
       context:"Nine reps across two segments. Average deal $48K, 74-day cycle, 3.1x coverage this quarter.",
       task:"Call the forecast honestly, unstick the deals worth unsticking, and hold every rep to one qualification bar.",
       knowledge:["CRM opportunity records","Forecast history","Deal scorecards","Competitive battlecards"],
       outcome:"A committed number, with the three deals that would change it named out loud." },
-    { id:"ae", parent:"sales", dept:"sales", title:"Account Executive",
+    { id:"ae", parent:"sales", dept:"sales", title:"Account Executive", nickname:"Marcus",
       look:{style:3},
       personality:"Curious and prepared. Comfortable letting a silence sit on a call.",
       context:"Carries a $1.4M annual quota in the 500–2,000 seat segment, selling to IT and security buyers.",
@@ -1907,14 +1936,14 @@ const DEFAULTS = {
       knowledge:["Account research briefs","Pricing and discount policy","Security review packet","Reference customers"],
       outcome:"A deal plan per opportunity: champion, economic buyer, compelling event, dated next step." },
 
-    { id:"support", parent:"ceo", dept:"support", title:"Support Manager",
+    { id:"support", parent:"ceo", dept:"support", title:"Support Manager", nickname:"Ines",
       look:{style:1},
       personality:"Steady under load. Treats a backlog like a fire line, not a to-do list.",
       context:"Eight engineers covering 16 hours a day, 1,900 tickets a month, one-hour first response promised to Premier accounts.",
       task:"Protect response times, staff the queue against volume, and send product pain back to engineering with evidence.",
       knowledge:["Ticket history","SLA policy","Release notes","Escalation runbook"],
       outcome:"A daily queue health read, plus a monthly list of the five issues costing the most support hours." },
-    { id:"supeng", parent:"support", dept:"support", title:"Escalation Engineer",
+    { id:"supeng", parent:"support", dept:"support", title:"Escalation Engineer", nickname:"Kwame",
       look:{style:4},
       personality:"Patient and literal. Writes the reply a customer can act on without a follow-up.",
       context:"Takes escalations on data sync, SSO, and reporting — usually from customers already frustrated by a first answer.",
@@ -1922,14 +1951,14 @@ const DEFAULTS = {
       knowledge:["Product documentation","Known issues log","Log search","Engineering wiki"],
       outcome:"A closed ticket with a plain-language summary and a linked article if it will happen again." },
 
-    { id:"cs", parent:"ceo", dept:"cs", title:"Director of Customer Success",
+    { id:"cs", parent:"ceo", dept:"cs", title:"Director of Customer Success", nickname:"Lena",
       look:{style:2},
       personality:"Warm but numerate. Would rather have the hard renewal conversation in month three than month eleven.",
       context:"Owns $38M of renewing revenue across 640 accounts, split between a managed book and a pooled model.",
       task:"Find the accounts that will churn before the renewal notice does, and grow the ones already getting value.",
       knowledge:["Product usage data","Renewal calendar","Health score model","QBR notes"],
       outcome:"A Monday risk list with the owner, the reason, and the play already in motion." },
-    { id:"onboard", parent:"cs", dept:"cs", title:"Onboarding Specialist",
+    { id:"onboard", parent:"cs", dept:"cs", title:"Onboarding Specialist", nickname:"Rosa",
       look:{style:1},
       personality:"Organized and encouraging. Assumes the customer is busy, not uninterested.",
       context:"Takes new customers from signature to first report in 30 days, usually with an IT admin juggling three other projects.",
@@ -1937,14 +1966,14 @@ const DEFAULTS = {
       knowledge:["Implementation playbook","Integration guides","Onboarding checklist","Training decks"],
       outcome:"A live account with connected data, trained admins, and a dated handoff to the success manager." },
 
-    { id:"legal", parent:"ceo", dept:"legal", title:"General Counsel",
+    { id:"legal", parent:"ceo", dept:"legal", title:"General Counsel", nickname:"Adrian",
       look:{style:4},
       personality:"Precise and unflappable. Explains risk in business terms, then gives a recommendation.",
       context:"A one-person legal function covering sales contracts, privacy, and vendor review for US and EU customers.",
       task:"Clear the contract queue without becoming the bottleneck, and keep the standard terms defensible.",
       knowledge:["Contract templates","Approved fallbacks","DPA and subprocessor list","Regulatory tracker"],
       outcome:"A redline back in 48 hours, with the risk in one paragraph and a clear recommendation." },
-    { id:"counsel", parent:"legal", dept:"legal", title:"Contracts Counsel",
+    { id:"counsel", parent:"legal", dept:"legal", title:"Contracts Counsel", nickname:"Yuki",
       look:{style:5},
       personality:"Fast and consistent. Unbothered by a long redline three days before quarter end.",
       context:"Reviews MSAs, order forms, and DPAs — most of which arrive in the last week of the quarter.",
@@ -1952,14 +1981,14 @@ const DEFAULTS = {
       knowledge:["Fallback matrix","Executed agreements","Insurance certificates","Signature authority policy"],
       outcome:"A returned redline summarizing what changed and what still needs a human decision." },
 
-    { id:"people", parent:"ceo", dept:"people", title:"Head of People",
+    { id:"people", parent:"ceo", dept:"people", title:"Head of People", nickname:"Nadia",
       look:{style:2},
       personality:"Direct and discreet. Says the awkward thing early, and kindly.",
       context:"210 employees across three countries, 14% annual attrition, 22 roles open this year.",
       task:"Keep managers capable, compensation defensible, and the hiring plan on schedule.",
       knowledge:["Compensation bands","Employee handbook","Engagement survey","Headcount plan"],
       outcome:"A monthly people read: attrition, hiring progress, and the two manager problems worth fixing now." },
-    { id:"recruit", parent:"people", dept:"people", title:"Technical Recruiter",
+    { id:"recruit", parent:"people", dept:"people", title:"Technical Recruiter", nickname:"Jonas",
       look:{style:3},
       personality:"Persistent and honest about the role, including the parts candidates won't love.",
       context:"Hiring backend and data engineers against offers from larger companies with bigger equity.",
@@ -2026,6 +2055,11 @@ function normalizeRoles(){
       .filter(k => k.label || k.url || k.text.trim());
     r.guardrails = r.guardrails || "";
     r.outOfScope = r.outOfScope || "";
+    /* Normalised here and nowhere else, so every reader — the brief, the
+       matcher, the ear, the transcript — sees the same string. A Sheet without
+       a Nickname column sends undefined, which lands as "" and reads as "no
+       nickname" everywhere. */
+    r.nickname = cleanNickname(r.nickname);
     r.language = String(r.language || "").trim();   // dictation language, e.g. "de-DE"
     r.voice = String(r.voice || "").trim();         // TTS voice name from the VoiceProfiles tab; "" = Automatic
     /* Three Sheet columns this page has no editor for but buildPrompt must
@@ -2060,6 +2094,75 @@ const $ = (s,r=document)=>r.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const roleById = id => state.roles.find(r => r.id === id);
 const deptOf = r => DEPTS[r.dept] || {name:"Team", tint:"#8E8E93"};
+
+/* =================================================================
+   A NICKNAME IS WHAT YOU CALL SOMEBODY
+
+   The title says what a persona does. The nickname says what you
+   call them, and the two are not interchangeable: you address Dana
+   and you escalate to the VP of Sales. Every surface in this app was
+   printing the title for both jobs, which is why a transcript read
+   like an org chart with speech in it.
+
+   One optional field settles it, and three helpers spend it:
+
+     nameOf(r)     what to call them — the nickname, or the title
+                   when there isn't one. Anywhere a PERSON is named.
+     roleLine(r)   the qualifier that keeps a nickname legible —
+                   the title, but only when a nickname is showing.
+                   "" otherwise, so nothing prints twice.
+     fullNameOf(r) both, joined. For lists, where you may be meeting
+                   this persona for the first time.
+
+   Everything downstream reads those three, never role.nickname, so
+   an empty nickname renders exactly what this app rendered before
+   the field existed — down to the byte in buildPrompt, which is what
+   keeps every already-answered brief's fingerprint valid.
+================================================================= */
+const NICK_MAX = 24;
+/* What survives from what was typed. A nickname is spoken aloud, matched
+   against a transcript, and pasted into a brief, so it keeps letters, spaces,
+   hyphens and apostrophes and loses everything that only makes trouble:
+   control characters and newlines (which would tear the brief into lines it
+   never had), square and angle brackets (which could forge a [SECTION] header
+   inside the prompt), and a leading @, which is how you TYPE a name at
+   somebody rather than part of the name itself. */
+function cleanNickname(v){
+  return String(v == null ? "" : v)
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .replace(/^[\s@]+/, "")
+    .replace(/[[\]<>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim().slice(0, NICK_MAX).trim();
+}
+const nameOf     = r => (r && r.nickname) || (r && r.title) || "";
+const roleLine   = r => (r && r.nickname && r.title) ? r.title : "";
+const fullNameOf = r => { const t = roleLine(r); return t ? nameOf(r) + " · " + t : nameOf(r); };
+/* The sub-line under a name, for the three headers that have only one of them:
+   the role, plus the team where the team still says something. A VP of Sales on
+   the Sales team is not "VP of Sales · Sales" — but a General Counsel on the
+   Legal team is worth both. With no nickname this is the team alone, which is
+   what those headers showed before. */
+/* How a colleague is introduced to ANOTHER persona, inside the wire history.
+   The name they are called by, qualified once by the role — the reader is
+   weighing whose answer this is, and "Priya" alone does not say why her read
+   on the pipeline should carry. Falls back to the bare title, which is what
+   this line has always said. */
+const attributionName = r => { const t = roleLine(r); return t ? nameOf(r) + ", the " + t : nameOf(r); };
+function roleAndTeam(r){
+  const t = roleLine(r), d = deptOf(r).name;
+  if(!t) return d;
+  return d && !t.toLowerCase().includes(d.toLowerCase()) ? t + " · " + d : t;
+}
+/* Who else answers to this name. A nickname two personas share addresses
+   neither of them — see castAliases — so the editor says so at the moment it
+   is typed rather than leaving you to wonder why "Sam" stopped routing. */
+function nicknameTwins(role){
+  const n = cleanNickname(role && role.nickname).toLowerCase();
+  if(!n) return [];
+  return state.roles.filter(r => r.id !== role.id &&
+    (cleanNickname(r.nickname).toLowerCase() === n || String(r.title || "").trim().toLowerCase() === n));
+}
 
 /* ========== sheet backend ========== */
 let sheetConnected = false;
@@ -2519,11 +2622,13 @@ function nodeHTML(role, isRoot){
   const d = deptOf(role);
   const asked = askedMap[role.id] || 0;
   return `<button class="node ${isRoot?"root-node":""} ${selectedId===role.id?"is-selected":""}"
-      style="--tint:${d.tint}" data-id="${role.id}" aria-label="${esc(role.title)}, ${esc(d.name)}">
+      style="--tint:${d.tint}" data-id="${role.id}"
+      aria-label="${esc(role.nickname ? role.title + ", known as " + role.nickname : role.title)}, ${esc(d.name)}">
       ${asked ? `<span class="badge">${asked}</span>` : ""}
       ${avatarSVG(role, "", isRoot ? 74 : 62)}
       <span class="eyebrow">${esc(d.name)}</span>
       <span class="title">${esc(role.title)}</span>
+      ${role.nickname ? `<span class="nodeNick">${esc(role.nickname)}</span>` : ""}
     </button>`;
 }
 function branch(role){
@@ -2538,9 +2643,10 @@ function outlineRow(role, sub){
   const asked = askedMap[role.id] || 0;
   return `<button class="oRow ${sub ? "sub" : ""} ${selectedId === role.id ? "is-selected" : ""}"
       style="--tint:${d.tint}" data-id="${role.id}" ${selectedId === role.id ? 'aria-current="true"' : ""}
-      aria-label="${esc(role.title)}, ${esc(d.name)}">
+      aria-label="${esc(role.nickname ? role.title + ", known as " + role.nickname : role.title)}, ${esc(d.name)}">
       ${avatarSVG(role, "", 28)}
       <span class="oTitle">${esc(role.title)}</span>
+      ${role.nickname ? `<span class="oNick">${esc(role.nickname)}</span>` : ""}
       ${asked ? `<span class="oBadge">${asked}</span>` : ""}
     </button>`;
 }
@@ -2804,7 +2910,7 @@ function convTitle(k){
   const first = (threads[k] || []).find(m => m.role === "user" && !m.note);
   if(first) return clip(String(first.content).replace(/\s+/g, " "), 60);
   const r = roleById((c && c.root) || k);
-  return r ? "New chat with " + r.title : "New chat";
+  return r ? "New chat with " + nameOf(r) : "New chat";
 }
 /* A conversation is worth listing once it holds a message, has a row in the
    Sheet, or is the one on screen — so a brand-new empty chat shows you where
@@ -3015,8 +3121,15 @@ function buildPrompt(role){
     if(t) seg.push(label ? label + "\n" + t : t);
   };
 
-  add("[IDENTITY]", `You are the ${role.title} at ${state.company}${d.name ? ", on the " + d.name + " team" : ""}. ` +
-      `Answer in the first person as that role, for the entire conversation, with no narration about being an assistant.`);
+  /* The nickname belongs in IDENTITY or nowhere: a persona addressed as "Dana"
+     that answers as "the VP of Sales" has been given a name nobody told it
+     about. Note the shape — with no nickname this produces the byte-for-byte
+     string it produced before the field existed, which is the whole reason
+     adding it did not invalidate one already-fingerprinted brief. */
+  const nick = cleanNickname(role.nickname);
+  add("[IDENTITY]", `You are ${nick ? nick + ", " : ""}the ${role.title} at ${state.company}${d.name ? ", on the " + d.name + " team" : ""}. ` +
+      `Answer in the first person as that role, for the entire conversation, with no narration about being an assistant.` +
+      (nick ? ` Everyone here calls you ${nick}. Answer to that name as readily as to your title, and never remark on being called it.` : ""));
   add("[VOICE]", role.personality);
   add("[CONTEXT]", role.context);
   add("[SCOPE]", role.task);
@@ -3094,7 +3207,7 @@ function wireHistory(history, speakerId){
       out.push({ role:"assistant", content: m.content });
     }else{
       const r = roleById(m.speaker);
-      quoted.push("[" + ((r && r.title) || "A colleague") +
+      quoted.push("[" + ((r && attributionName(r)) || "A colleague") +
         " answered this earlier in the same conversation — their words, not yours]\n" + displayText(m));
     }
   });
@@ -3199,7 +3312,8 @@ const Agent = {
     const low = s => s ? s.charAt(0).toLowerCase() + s.slice(1).replace(/\.$/,"") : "";
     const kn = knList(role);
     const answer = [
-      role.task ? `I own ${low(role.task)}.` : `I'm the ${role.title}.`,
+      role.task ? `I own ${low(role.task)}.`
+                : role.nickname ? `I'm ${role.nickname}, the ${role.title}.` : `I'm the ${role.title}.`,
       role.outcome ? `What you'd get back from a real answer: ${low(role.outcome)}.` : ""
     ].filter(Boolean).join(" ");
     return [
@@ -3838,7 +3952,9 @@ const Speech = {
     }
   },
   preview(role){
-    this.speak(role, "Hi — I'm the " + role.title + ". This is how replies will sound.");
+    this.speak(role, role.nickname
+      ? "Hi — I'm " + role.nickname + ", the " + role.title + ". This is how replies will sound."
+      : "Hi — I'm the " + role.title + ". This is how replies will sound.");
   }
 };
 
@@ -3908,7 +4024,7 @@ function msgHTML(m, o){
     if(!r) return `<div class="msg note"><div class="bubble">${esc(displayText(m))}</div></div>`;
     return `<div class="msg handoff" style="--tint:${deptOf(r).tint}"><div class="handoffPill">
         ${avatarSVG(r, "", 22)}
-        <span>Now asking <b>${esc(r.title)}</b></span>
+        <span>Now asking <b>${esc(nameOf(r))}</b></span>
         ${o.reask ? `<button data-reask>Ask them the same question</button>` : ""}
       </div></div>`;
   }
@@ -3948,14 +4064,19 @@ function msgHTML(m, o){
   ============================================================= */
   const speaker = m.role === "assistant" ? (roleById(m.speaker) || roleById(o.fallback)) : null;
   const tint = speaker ? deptOf(speaker).tint : "";
-  const name = m.role === "user" ? "You" : (speaker ? speaker.title : "Assistant");
+  /* Name first, role second — the order a colleague is introduced in, and the
+     reason the nickname earns its place here rather than replacing anything.
+     Without a nickname roleLine is "" and this row is the row it always was:
+     one bold title and a time. */
+  const name = m.role === "user" ? "You" : (speaker ? nameOf(speaker) : "Assistant");
+  const sub  = m.role === "user" ? "" : (speaker ? roleLine(speaker) : "");
   const face = m.role === "user" ? meAvatar(36)
              : speaker ? avatarSVG(speaker, "", 36) : meAvatar(36);
   const time = m.at ? fmtTime(m.at) : "";
   return `<div class="msg ${kind} ${tone} tagged${o.cont ? " cont" : ""}"${tint ? ` style="--tint:${tint}"` : ""}>
       <span class="who">${face}<span class="hoverTime">${esc(m.at ? fmtTimeShort(m.at) : "")}</span></span>
       <div class="said">
-        <span class="mHead"><span class="whoName">${esc(name)}</span><span class="mTime">${esc(time)}</span></span>
+        <span class="mHead"><span class="whoName">${esc(name)}</span>${sub ? `<span class="whoRole">${esc(sub)}</span>` : ""}<span class="mTime">${esc(time)}</span></span>
         ${bubble}
       </div>
     </div>`;
@@ -3986,7 +4107,7 @@ function renderThread(){
   const built = buildPrompt(r);
   const blocked = built.missing.length > 0;
   $("#composerInput").disabled = blocked;
-  $("#composerInput").placeholder = blocked ? "Complete the brief to message this role" : "Message " + r.title;
+  $("#composerInput").placeholder = blocked ? "Complete the brief to message this role" : "Message " + nameOf(r);
   $("#mic").disabled = blocked;
   if(blocked && dictTarget.main) Dictation.stop();
   /* Scroll preservation: a re-render keeps the reader's place. Only a render
@@ -4001,7 +4122,7 @@ function renderThread(){
   if(!t.length && !pending.has(convId)){
     box.innerHTML = threadNotices(r) + `<div class="empty">
       ${avatarSVG(r, "", 78)}
-      <h4>${esc(r.title)}</h4>
+      <h4>${esc(nameOf(r))}</h4>
       <p>Answers come from the brief on the other tab${getToken() ? "" : ". No access token yet, so replies are placeholders"}.</p>
       <div class="starters">${STARTERS.map(s=>`<button class="starter" data-starter="${esc(s)}">${esc(s)}</button>`).join("")}</div>
     </div>`;
@@ -4053,7 +4174,7 @@ function typingHTML(key){
   return `<div class="msg from typing${room ? " tagged" : ""}" style="--tint:${deptOf(who).tint}">
       <span class="who">${avatarSVG(who, "", 36)}</span>
       <div class="said">
-        ${room ? `<div class="mHead"><span class="whoName">${esc(who.title)}</span></div>` : ""}
+        ${room ? `<div class="mHead"><span class="whoName">${esc(nameOf(who))}</span>${roleLine(who) ? `<span class="whoRole">${esc(roleLine(who))}</span>` : ""}</div>` : ""}
         <div class="dots"><i></i><i></i><i></i></div>
       </div>
     </div>`;
@@ -4083,15 +4204,15 @@ function renderCast(){
       next ? "next" : "",
       hears && !floor && !next ? "hears" : ""
     ].filter(Boolean).join(" ");
-    const title = floor ? r.title + " is answering"
-      : next ? r.title + " is waiting to answer"
-      : hears ? r.title + " is listening — click to hand them this conversation"
+    const title = floor ? fullNameOf(r) + " is answering"
+      : next ? fullNameOf(r) + " is waiting to answer"
+      : hears ? fullNameOf(r) + " is listening — click to hand them this conversation"
       : id === selectedId ? "Answering now"
-      : "Hand this conversation to " + r.title;
+      : "Hand this conversation to " + fullNameOf(r);
     return `<button class="castChip ${cls}" style="--tint:${deptOf(r).tint}"
         data-cast="${esc(id)}" ${id === selectedId ? 'aria-current="true"' : ""}
         title="${esc(title)}" aria-label="${esc(title)}">
-        ${avatarSVG(r, "", 22)}<span class="nm">${esc(r.title)}</span><span class="st" aria-hidden="true"></span>
+        ${avatarSVG(r, "", 22)}<span class="nm">${esc(nameOf(r))}</span><span class="st" aria-hidden="true"></span>
       </button>`;
   }).join("");
   $("#castAdd").textContent = cast.length > 1 ? "+ Add" : "+ Bring in";
@@ -4254,8 +4375,11 @@ function renderCard(){
   const d = deptOf(r);
   $("#card").style.setProperty("--tint", d.tint);
   $("#cardAvatar").innerHTML = avatarSVG(r, "", 44);
-  $("#cardDept").textContent = d.name;
-  $("#cardTitle").textContent = r.title;
+  /* The eyebrow carries the role when the nickname has taken the title line,
+     so the one header on screen never leaves you looking at a first name you
+     can't place. Without a nickname it is the department, exactly as before. */
+  $("#cardDept").textContent = roleAndTeam(r);
+  $("#cardTitle").textContent = nameOf(r);
   /* The facepile lives in the header, which is on screen on both tabs — so it
      is this function's to keep current, not renderThread's. Switching persona
      while reading a brief used to leave the previous conversation's members
@@ -4329,7 +4453,7 @@ function selectRole(id, opts){
   renderAmbient();
   const input = $("#composerInput");
   if(!opts.keepDraft){ input.value = ""; resetComposerHeight(input); clearMainGhost(); }
-  input.placeholder = "Message " + r.title;
+  input.placeholder = "Message " + nameOf(r);
   setTab(tab);
   if(innerWidth <= 900) showPane("chat");
 }
@@ -4345,7 +4469,7 @@ function switchSpeaker(id){
   joinConv(convId, selectedId);
   joinConv(convId, id);
   t.push({ role:"assistant", note:true, error:true, at:Date.now(), speaker:id, switchTo:id,
-           content:"Now asking " + r.title + "." });
+           content:"Now asking " + nameOf(r) + "." });
   selectRole(id, { conv: convId, keepDraft: true });
   const box = $("#thread");
   box.scrollTop = box.scrollHeight;
@@ -4406,7 +4530,7 @@ function renderMain(){
       <div class="gLabel">${DEPTS[k].name}</div>
       <div class="group">
         ${byDept[k].map(r => `<button class="row" data-edit="${r.id}">
-            ${avatarSVG(r, "", 34)}<span class="k">${esc(r.title)}<small>${(r.knowledge||[]).length} knowledge sources</small></span>${CHEV}
+            ${avatarSVG(r, "", 34)}<span class="k">${esc(fullNameOf(r))}<small>${(r.knowledge||[]).length} knowledge sources</small></span>${CHEV}
           </button>`).join("")}
         <button class="row" data-add="${k}"><span class="k" style="color:var(--accent)">Add a role</span></button>
       </div>
@@ -4595,6 +4719,23 @@ function knSave(){
 }
 
 /* ========== settings: role pane ========== */
+/* The line under the Nickname box. It is the help text until the name stops
+   working, and then it is the reason — said at the moment it is typed rather
+   than left for you to discover as a persona that quietly stopped answering
+   when you called it. A shared name addresses NOBODY (see castAliases), which
+   is a silence worth one sentence of warning. */
+function nickHintHTML(r){
+  const nick = cleanNickname(r.nickname);
+  const twin = nicknameTwins(r)[0];
+  if(twin){
+    const whose = cleanNickname(twin.nickname).toLowerCase() === nick.toLowerCase()
+      ? "already what the " + twin.title + " is called"
+      : "already a role title here";
+    return `<b class="warn">“${esc(nick)}” is ${esc(whose)}.</b> ` +
+           `A name two people answer to reaches neither — pick one only this role answers to.`;
+  }
+  return "What people call them. Shown in chat, and they answer to it when addressed by name.";
+}
 let knEditingFor = null;
 function renderRolePane(){
   const r = roleById(editingId); if(!r) return;
@@ -4626,7 +4767,7 @@ function renderRolePane(){
     <section class="sect sMark">
     <div class="gLabel">Mark</div>
     <div class="group">
-      <div class="editHero">${avatarSVG(r, "", 104)}<div><div class="n">${esc(r.title)}</div><div class="d">${esc(d.name)}</div></div></div>
+      <div class="editHero">${avatarSVG(r, "", 104)}<div><div class="n">${esc(nameOf(r))}</div><div class="d">${esc(roleAndTeam(r))}</div></div></div>
       <div class="row"><span class="k">Team</span>
         <select class="text" data-look="dept" style="text-align:right;border:0;background:none;color:var(--label2);font-size:15px">
           ${Object.keys(DEPTS).map(k=>`<option value="${k}" ${r.dept===k?"selected":""}>${DEPTS[k].name}</option>`).join("")}
@@ -4645,6 +4786,7 @@ function renderRolePane(){
     <div class="group briefGroup">
       <div class="briefHead briefWide">
         <div class="row"><span class="k">Role title</span><input class="text" data-role-field="title" value="${esc(r.title)}"></div>
+        <div class="row"><span class="k">Nickname<small id="nickHint">${nickHintHTML(r)}</small></span><input class="text" data-role-field="nickname" value="${esc(r.nickname||"")}" placeholder="Optional" maxlength="${NICK_MAX}" spellcheck="false"></div>
         <div class="row"><span class="k">Language<small>Locale for voice dictation, like en-US or de-DE. Blank uses en-US.</small></span><input class="text" data-role-field="language" value="${esc(r.language||"")}" placeholder="en-US"></div>
       </div>
       ${long("personality","Personality","How they show up")}
@@ -4667,7 +4809,7 @@ function renderRolePane(){
     <p class="footNote" id="delNote"></p>
     </section>
     </div>`;
-  $("#sheetTitle").textContent = r.title;
+  $("#sheetTitle").textContent = nameOf(r);
 }
 
 /* ========== role picker ========== */
@@ -4689,10 +4831,12 @@ function previewFor(r){
 let pickerMode = "switch";
 function renderPicker(){
   const q = ($("#pickerQuery").value || "").trim().toLowerCase();
+  /* searchable by whichever of the three you happen to remember */
   const hits = state.roles.filter(r =>
-    !q || r.title.toLowerCase().includes(q) || deptOf(r).name.toLowerCase().includes(q));
+    !q || r.title.toLowerCase().includes(q) || deptOf(r).name.toLowerCase().includes(q) ||
+    String(r.nickname || "").toLowerCase().includes(q));
   if(!hits.length){
-    $("#pickerList").innerHTML = `<p class="noHits">No roles match that. Try a title or a team name.</p>`;
+    $("#pickerList").innerHTML = `<p class="noHits">No roles match that. Try a name, a title or a team.</p>`;
     return;
   }
   const byDept = {};
@@ -4702,7 +4846,7 @@ function renderPicker(){
     <div class="group">
       ${byDept[k].map(r => `<button class="row" data-pick="${r.id}">
         ${avatarSVG(r, "", 56)}
-        <span class="k">${esc(r.title)}<span class="preview">${esc(
+        <span class="k">${esc(nameOf(r))}${roleLine(r) ? `<span class="kRole">${esc(roleLine(r))}</span>` : ""}<span class="preview">${esc(
           inConv(convId, r.id) && r.id !== selectedId ? "Already in this conversation" : previewFor(r))}</span></span>
         ${selectedId === r.id ? `<span class="tick">✓</span>` : CHEV}
       </button>`).join("")}
@@ -4976,6 +5120,9 @@ function personaPayload(r){
        pasted body in their own columns, and a save that sent labels alone
        would blank them on every edit */
     outOfScope:r.outOfScope || "", knowledge:knList(r),
+    /* cleaned again on the way out, so a Sheet cell can never hold a nickname
+       this app would render differently from the one it saved */
+    nickname:cleanNickname(r.nickname),
     /* savePersona sends the complete persona record — leaving Language or
        Voice out would let any brief edit blank them in the Sheet */
     language:(r.language || "").trim(),
@@ -5028,17 +5175,17 @@ async function savePersonaNow(id){
          tab without the SourceUrl or Content column. Saying so beats letting a
          link disappear between here and the Sheet. */
       if(res && (res.warnings || []).length){
-        showBanner("<b>Saved “" + esc(r.title) + "”, with something left out.</b> " +
+        showBanner("<b>Saved “" + esc(nameOf(r)) + "”, with something left out.</b> " +
           res.warnings.map(esc).join(" "));
       }
     });
   }catch(err){
     dirtyRoles.delete(id);                 // stop shielding it: the Sheet's copy is the truth now
     if(err.code === "CONFLICT"){
-      showBanner("<b>Another device saved first.</b> “" + esc(r.title) +
+      showBanner("<b>Another device saved first.</b> “" + esc(nameOf(r)) +
         "” was updated somewhere else — reload this page to pick up the latest version, then re-apply your edit.");
     }else{
-      showBanner("Couldn't save “" + esc(r.title) + "” to the Sheet (" + esc(err.message) +
+      showBanner("Couldn't save “" + esc(nameOf(r)) + "” to the Sheet (" + esc(err.message) +
         "). The edit is still in this browser.");
     }
   }
@@ -5632,7 +5779,7 @@ function whenLabel(ts){
 }
 /* "Head of Marketing and General Counsel" — the cast of one conversation */
 function castLabel(ids){
-  const names = (ids || []).map(id => roleById(id)).filter(Boolean).map(r => r.title);
+  const names = (ids || []).map(id => roleById(id)).filter(Boolean).map(nameOf);
   if(!names.length) return "";
   if(names.length === 1) return names[0];
   return names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
@@ -5684,7 +5831,7 @@ function convRowHTML(c, meta, titleHTML){
    how long it ran, and when it was last touched. */
 function convMeta(c){
   const cast = castOf(c.id);
-  const who = cast.length > 1 ? castLabel(cast) : (roleById(cast[0]) || {}).title || "Removed role";
+  const who = cast.length > 1 ? castLabel(cast) : nameOf(roleById(cast[0])) || "Removed role";
   const n = c.loaded ? (threads[c.id] || []).filter(m => !m.note).length : c.messageCount;
   const bits = [esc(who)];
   if(n) bits.push(n + " message" + (n === 1 ? "" : "s"));
@@ -6068,7 +6215,9 @@ svg[hidden]{display:none}
 .mHead{display:flex;align-items:baseline;gap:6px;margin-bottom:1px}
 .msg.cont .mHead{display:none}
 .whoName{font-size:12.5px;font-weight:700;letter-spacing:-.005em}
-.mTime{font-size:10px;color:rgba(120,120,128,.95)}
+.whoRole{font-size:10.5px;font-weight:600;color:rgba(120,120,128,.95);
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mTime{font-size:10px;color:rgba(120,120,128,.95);flex:none}
 .bubble{
   max-width:100%;padding:0;border-radius:0;background:none;font-size:13px;line-height:1.42;
   white-space:pre-wrap;overflow-wrap:anywhere;
@@ -6260,9 +6409,11 @@ const PopOut = {
     this.els.doc.body.style.setProperty("--tint", d.tint);
     this.els.doc.body.classList.toggle("dark", state.appearance === "dark");
     this.els.avatar.innerHTML = avatarSVG(r, "", 30);
-    this.els.title.textContent = r.title;
-    this.els.dept.textContent = d.name;
-    this.els.input.placeholder = "Message " + r.title;
+    this.els.title.textContent = nameOf(r);
+    /* the pop-out is one narrow column with no org chart around it, so when a
+       nickname takes the header the role has to ride the line under it */
+    this.els.dept.textContent = roleAndTeam(r);
+    this.els.input.placeholder = "Message " + nameOf(r);
     this.render();
   },
   retheme(){ if(this.win) this.pin(this.convId, this.roleId); },
@@ -6444,26 +6595,41 @@ const ROOM = {
    phrase, never a loose keyword. */
 const RANK_HEAD = /^(?:head of|vp of|vice president of|director of|chief|senior|lead|principal)\s+/i;
 const RANK_TAIL = /\s+(?:manager|executive|engineer|specialist|counsel|officer|lead|director|generalist)$/i;
+/* Each alias carries whether it is a PERSONAL name, because the two kinds earn
+   different latitude below. A nickname is the strongest address there is — it
+   names one human being and nothing else — while a title is a noun that turns
+   up in ordinary sentences about the work. */
 function roleAliases(r){
+  const out = [];
+  const push = (a, personal) => {
+    const s = String(a || "").trim().toLowerCase();
+    if(s && !out.some(o => o.alias === s)) out.push({ alias:s, personal });
+  };
+  push(r.nickname, true);
   const t = String(r.title || "").trim().toLowerCase();
-  if(!t) return [];
-  const out = [t];
-  const head = t.replace(RANK_HEAD, "").trim();
-  const tail = t.replace(RANK_TAIL, "").trim();
-  [head, tail].forEach(a => { if(a.length >= 3 && out.indexOf(a) < 0) out.push(a); });
+  if(t){
+    push(t, false);
+    const head = t.replace(RANK_HEAD, "").trim();
+    const tail = t.replace(RANK_TAIL, "").trim();
+    [head, tail].forEach(a => { if(a.length >= 3) push(a, false); });
+  }
   return out;
 }
 /* An alias only addresses somebody if it addresses exactly one somebody: in a
    cast holding both a VP of Sales and an Account Executive, "sales" is still
-   unambiguous, but two roles that both shorten to the same phrase lose it. */
+   unambiguous, but two roles that both shorten to the same phrase lose it.
+   Nicknames go through the same gate, which is what makes two people called
+   Sam address neither — the Settings editor says so as the second one is
+   typed, rather than leaving a name that silently stopped routing. */
 function castAliases(cast){
   const seen = new Map();
   cast.forEach(id => {
     const r = roleById(id); if(!r) return;
-    roleAliases(r).forEach(a => seen.set(a, seen.has(a) ? null : id));
+    roleAliases(r).forEach(a =>
+      seen.set(a.alias, seen.has(a.alias) ? null : { id, personal:a.personal }));
   });
   const out = [];
-  seen.forEach((id, alias) => { if(id) out.push({ alias, id }); });
+  seen.forEach((hit, alias) => { if(hit) out.push({ alias, id:hit.id, personal:hit.personal }); });
   /* longest first, so "head of marketing" wins over "marketing" */
   return out.sort((a, b) => b.alias.length - a.alias.length);
 }
@@ -6476,15 +6642,31 @@ const rxEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
    which is exactly what separates it from "I'll ask legal later". */
 function addressedRole(text, cast){
   const t = String(text).toLowerCase().replace(/\s+/g, " ").trim();
-  const LEAD = "^(?:hey|hi|hello|ok|okay|so|now|alright)?[ ,]*";
-  for(const { alias, id } of castAliases(cast)){
+  const LEAD = "^(?:hey|hi|hello|ok|okay|so|now|alright)?[ ,]*@?";
+  for(const { alias, id, personal } of castAliases(cast)){
     const a = rxEsc(alias);
     const pats = [
       new RegExp(LEAD + a + " ?[,:—–-]"),                       // "Marketing, what's…"
-      new RegExp("[,:] ?" + a + " ?[?.!]*$"),                    // "…, over to you Marketing?"
+      new RegExp("[,:] ?@?" + a + " ?[?.!]*$"),                  // "…, over to you Marketing?"
       new RegExp(LEAD + "(?:let'?s )?ask (?:the )?" + a + "\\b"),// "Ask legal whether…"
       new RegExp(LEAD + "(?:a )?question for (?:the )?" + a + "\\b")
     ];
+    /* A personal name needs no punctuation to be a vocative. Nobody says the
+       comma in "Dana what's the forecast", and a dictated sentence rarely
+       carries one — so a nickname is allowed to address from either end of the
+       utterance bare, which is exactly the latitude a job title must never get
+       ("sales was up again" is not a question for the VP of Sales).
+
+       The trade this makes, knowingly: a nickname that is also an ordinary
+       verb — Mark, Will, Art — can be read as address in "mark it as closed".
+       Short names are the worst offenders and are held to the punctuated forms
+       above, and the cost of the rest is one answer from a real colleague in a
+       room that was going to answer anyway. Choosing a distinctive nickname is
+       the fix, and Settings says so where you type it. */
+    if(personal && alias.length >= 3) pats.push(
+      new RegExp(LEAD + a + "\\b"),                              // "Dana what's the…"
+      new RegExp("(?:^|\\s)@?" + a + "\\b ?[?.!]*$")             // "…what do you think Dana?"
+    );
     if(pats.some(p => p.test(t))) return id;
   }
   return null;
@@ -6891,7 +7073,7 @@ const Ambient = {
       const r = roleById(spoken);
       const out = await this.soloVerdict(item, spoken, signal);
       if(out.length) out[0].why = "addressed by name";
-      else this.log("no", item.text, "addressed " + (r ? r.title : spoken) + ", who had nothing to answer");
+      else this.log("no", item.text, "addressed " + (r ? nameOf(r) : spoken) + ", who had nothing to answer");
       return out;
     }
     const votes = await Promise.all(cast.map(id =>
@@ -6906,7 +7088,7 @@ const Ambient = {
       const rank = ok && !Room.cooled(o.id) ? conf - ROOM.RECENCY_PENALTY : conf;
       return { id:o.id, ok, conf, rank, v:o.v, note:o.v.reason || "" };
     });
-    const named = id => { const r = roleById(id); return r ? r.title : id; };
+    const named = id => { const r = roleById(id); return r ? nameOf(r) : id; };
     const board = scored.slice()
       .sort((a, b) => (b.rank || 0) - (a.rank || 0))
       .map(s => named(s.id) + " " + (s.bad ? "—" : Math.round(s.conf * 100) + "%") + (s.ok ? "" : " ✗"))
@@ -6990,7 +7172,7 @@ const Ambient = {
         ? "watchdog reset — the answer hung past its ceiling"
         : (outcome === "blocked" ? "brief incomplete or thread busy" : "answer " + outcome + " — see the thread"));
     }else if(follow){
-      this.log("ok", w.q, r.title + " added a second answer");
+      this.log("ok", w.q, nameOf(r) + " added a second answer");
     }
   },
   /* One persona's gate. Stateless on the server and scoped entirely by that
@@ -7097,7 +7279,7 @@ function renderAmbient(){
     detail = "“" + Ambient.stageText + "”";
     busyDot = true;
   }else if(Ambient.stage === "answering"){
-    label = holder ? holder.title : "Answering";
+    label = holder ? nameOf(holder) : "Answering";
     detail = "“" + Ambient.stageText + "”";
     busyDot = true;
   }else if(Ambient.paused){ label = "Paused"; detail = "while you dictate"; }
@@ -7121,7 +7303,7 @@ function renderAmbient(){
   const nx = $("#ambientNext");
   nx.hidden = !nextRole;
   nx.innerHTML = nextRole
-    ? avatarSVG(nextRole, "", 17) + `<span class="nm">${esc(nextRole.title)} next</span>` : "";
+    ? avatarSVG(nextRole, "", 17) + `<span class="nm">${esc(nameOf(nextRole))} next</span>` : "";
   const qEl = $("#ambientQueue");
   qEl.hidden = !Ambient.queue.length;
   qEl.textContent = Ambient.queue.length + " queued";
@@ -7498,10 +7680,27 @@ $("#paneRole").addEventListener("input", e => {
   if(kf && knEditor){ knEditor[kf.dataset.knField] = e.target.value; knEditor.err = ""; return; }
   const f = e.target.closest("[data-role-field]");
   if(f){
-    r[f.dataset.roleField] = f.value;
+    const key = f.dataset.roleField;
+    /* The nickname is cleaned on the way IN, not on the way out: it feeds the
+       brief, the alias matcher and the ear, and every one of them should see
+       the same string the Sheet will hold. The input keeps whatever was typed,
+       so the caret never moves — the pane is not re-rendered on a keystroke
+       (refreshAfterEdit leaves `pane` false), and the box catches up the next
+       time it is drawn. */
+    r[key] = key === "nickname" ? cleanNickname(f.value) : f.value;
     touchRole(r);
     refreshAfterEdit();
-    if(f.dataset.roleField === "title") $("#sheetTitle").textContent = r.title;
+    if(key === "title" || key === "nickname"){
+      $("#sheetTitle").textContent = nameOf(r);
+      const hero = $("#paneRole .editHero .n");
+      if(hero) hero.textContent = nameOf(r);
+      const heroSub = $("#paneRole .editHero .d");
+      if(heroSub) heroSub.textContent = roleAndTeam(r);
+    }
+    if(key === "nickname"){
+      const hint = $("#nickHint");
+      if(hint) hint.innerHTML = nickHintHTML(r);
+    }
   }
 });
 $("#paneRole").addEventListener("change", e => {
@@ -7534,7 +7733,7 @@ function addRole(dept){
   const id = "role" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const role = {
     id, parent: lead ? lead.id : null, dept,
-    title:"New role",
+    title:"New role", nickname:"",
     look:{ skin:"", style:Math.floor(Math.random()*6) },
     personality:"", context:"", task:"", knowledge:[], outcome:"",
     guardrails:"", outOfScope:"", language:"", voice:"",
@@ -7564,7 +7763,7 @@ function deleteRole(){
   }
   if(!armedDelete){
     armedDelete = true;
-    $("#delLabel").textContent = "Tap again to remove " + r.title;
+    $("#delLabel").textContent = "Tap again to remove " + fullNameOf(r);
     $("#delNote").textContent = "This can't be undone.";
     setTimeout(() => { armedDelete = false; if(editingId === r.id) renderRolePane(); }, 4000);
     return;

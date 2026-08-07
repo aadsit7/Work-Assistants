@@ -1,9 +1,33 @@
 /**
  * ============================================================================
  *  PERSONA ASSISTANT — Google Apps Script backend
- *  (rev 11 — a role can be added and removed, 2026-08-06)
+ *  (rev 12 — personas have nicknames, 2026-08-07)
  *  Paste this whole file into your Sheet's Apps Script editor (replace Code.gs).
  * ============================================================================
+ *
+ *  CHANGED IN REV 12 (from rev 11)
+ *    - A PERSONA CAN HAVE A NICKNAME. New optional Personas column, Nickname:
+ *      what people call this role, as opposed to what the role does. The app
+ *      shows it in every transcript beside the title and lets you address a
+ *      persona by it; this file's job is to store it, send it, and put it in
+ *      the brief — a persona that is called Dana has to be TOLD it is called
+ *      Dana or it will answer to the name having never heard it.
+ *    - buildPrompt gains a clause in [IDENTITY], and only when a nickname is
+ *      set. With the cell empty it assembles the byte-for-byte string it
+ *      assembled in rev 11, which is the whole reason adding this invalidated
+ *      no existing brief: a Personas tab with no Nickname column fingerprints
+ *      exactly as it always did, and not one persona came back STALE_BRIEF.
+ *    - cleanNickname_ runs INSIDE buildPrompt rather than at the edges, so the
+ *      brief stays a pure function of the row. A Nickname typed straight into
+ *      the Sheet by hand reaches the same bytes as one saved by the app, which
+ *      is what keeps the two implementations agreeing about a cell neither of
+ *      them wrote. It also means a nickname cannot forge a [SECTION] header
+ *      inside the brief it is pasted into.
+ *    - verifyPromptParity checks a third fixture, a persona with a nickname:
+ *      e2cd6349. The first two are UNCHANGED at d7d3155e and affce24c, which
+ *      is the assertion that matters most — it proves the no-nickname path
+ *      still builds what it built before.
+ *    - checkSetup reports Personas.Nickname among the optional columns.
  *
  *  CHANGED IN REV 11 (from rev 10)
  *    - ADDING A ROLE NOW WORKS. savePersona opened no rows: a persona the
@@ -414,18 +438,34 @@ function classify_(req) {
 }
 
 function classifierSystem_(p) {
+  var nick = cleanNickname_(p.nickname);
   var lines = [
     'You are the gate for the ' + p.title + ' at ' + p.company +
       (p.deptName ? ' (' + p.deptName + ' team)' : '') +
       '. Decide whether the LATEST utterance expresses an information need this role should answer right now.',
-    '',
+    ''
+  ];
+  /* Without this the gate reads "Dana, what's the forecast?" as a question
+   * containing an unfamiliar proper noun and weighs it no differently from one
+   * addressed to nobody. The client's addressedRole() catches the clean
+   * vocative shapes before a gate is ever asked, but this IS the fallback for
+   * everything it does not catch — and being called by name is the strongest
+   * signal a room ever produces about who should speak. */
+  if (nick) {
+    lines.push(
+      'This role is called ' + nick + '. Being addressed by that name — anywhere in the ' +
+        'utterance — is a strong signal the question is for this role, and being addressed by ' +
+        'somebody ELSE\'S name is a strong signal that it is not.',
+      '');
+  }
+  lines.push(
     'WHAT THIS ROLE OWNS:',
     p.task || '(not specified)',
     '',
     'WHAT THIS ROLE KNOWS ABOUT THE BUSINESS:',
     p.context || '(not specified)',
     ''
-  ];
+  );
   if ((p.researchDomains || []).length) {
     lines.push('This role also researches: ' + p.researchDomains.join(', ') + '.', '');
   }
@@ -589,6 +629,30 @@ function fnv1a(str) {
   return h.toString(16).padStart(8, '0');
 }
 
+/* What survives of a nickname, mirroring cleanNickname() in index.html.
+ *
+ * This runs inside buildPrompt rather than at the edges, which is deliberate:
+ * a Nickname cell can be typed straight into the Sheet by hand, where nothing
+ * has cleaned it. Cleaning HERE makes the brief a pure function of the row, so
+ * both implementations reach the same bytes from the same cell no matter which
+ * path the value took to get there — the alternative is a prompt whose hash
+ * depends on whether the app or a human wrote it, which is a STALE_BRIEF the
+ * next time the two disagree.
+ *
+ * Kept: letters, digits, spaces, hyphens, apostrophes — a nickname is spoken
+ * aloud and matched against a transcript. Dropped: control characters and
+ * newlines (which would tear the brief into lines it never had), square and
+ * angle brackets (which could forge a [SECTION] header inside it), and a
+ * leading @, which is how you type a name AT somebody rather than part of it. */
+function cleanNickname_(v) {
+  return String(v == null ? '' : v)
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/^[\s@]+/, '')
+    .replace(/[[\]<>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim().slice(0, 24).trim();
+}
+
 /* A knowledge source is a label, a label and a URL, or a label and a body of
  * text pasted in the app. One shape covers all three; a bare string — an older
  * Sheet row, or a client that predates this — normalises to the first.
@@ -676,10 +740,18 @@ function buildPrompt(role) {
     if (t) seg.push(label ? label + '\n' + t : t);
   }
 
-  add('[IDENTITY]', 'You are the ' + role.title + ' at ' + role.company +
+  /* The nickname belongs in IDENTITY or nowhere: a persona addressed as "Dana"
+   * that answers as "the VP of Sales" has been given a name nobody told it
+   * about. Note the shape — with no nickname this produces the byte-for-byte
+   * string it produced before the field existed, so a Personas tab with no
+   * Nickname column fingerprints exactly as it always did. */
+  var nick = cleanNickname_(role.nickname);
+  add('[IDENTITY]', 'You are ' + (nick ? nick + ', ' : '') + 'the ' + role.title + ' at ' + role.company +
       (role.deptName ? ', on the ' + role.deptName + ' team' : '') +
       '. Answer in the first person as that role, for the entire conversation, ' +
-      'with no narration about being an assistant.');
+      'with no narration about being an assistant.' +
+      (nick ? ' Everyone here calls you ' + nick + '. Answer to that name as readily as to your title, ' +
+              'and never remark on being called it.' : ''));
   add('[VOICE]', role.personality);
   add('[CONTEXT]', role.context);
   add('[SCOPE]', role.task);
@@ -767,6 +839,9 @@ function personaFromSheet_(personaId) {
     id:          row.PersonaId,
     orgChartId:  row.OrgChartId,
     title:       row.Title,
+    /* Optional column. A Personas tab without it reads undefined here, which
+     * buildPrompt treats as no nickname — the same brief, the same hash. */
+    nickname:    row.Nickname,
     company:     company,
     deptName:    deptName,
     personality: row.Personality,
@@ -1397,7 +1472,7 @@ function getConfig_() {
     return {
       id: p.PersonaId, parent: p.ParentPersonaId || null,
       dept: p.DepartmentId, deptName: d.Name || '', tint: d.ColorHex || '#8E8E93',
-      title: p.Title, personality: p.Personality, context: p.Context,
+      title: p.Title, nickname: p.Nickname || '', personality: p.Personality, context: p.Context,
       task: p.Task, outcome: p.Outcome, guardrails: p.Guardrails,
       outOfScope: p.OutOfScopeResponse, knowledge: kn, version: Number(p.Version || 1),
       // the client echoes this on saves so the conflict check works
@@ -1510,7 +1585,7 @@ function savePersona_(req) {
     var commas = function (v) { return Array.isArray(v) ? v.join(', ') : v; };
 
     var map = {
-      Title: p.title, Personality: p.personality, Context: p.context, Task: p.task,
+      Title: p.title, Nickname: p.nickname, Personality: p.personality, Context: p.context, Task: p.task,
       Outcome: p.outcome, Guardrails: p.guardrails, OutOfScopeResponse: p.outOfScope,
       DepartmentId: p.dept, ParentPersonaId: p.parent || '',
       AvatarSkinHex: p.look && p.look.skin, AvatarHairHex: p.look && p.look.hair,
@@ -1624,6 +1699,7 @@ function createPersonaRow_(sh, head, req, p) {
     DepartmentId:     p.dept || '',
     ParentPersonaId:  p.parent || '',
     Title:            p.title || 'New role',
+    Nickname:         p.nickname || '',
     Status:           'active',
     Version:          1,
     RowVersion:       1,
@@ -2251,7 +2327,8 @@ function checkSetup() {
      Each one degrades on its own rather than breaking anything, so this
      reports what is missing and what that costs instead of failing. */
   var missingCols = [];
-  [[TAB.interactions, 'Title', 'conversations are named after their opening question instead of a name you can edit'],
+  [[TAB.personas, 'Nickname', 'personas are addressed by their job title only — a nickname typed in the app is kept until the tab is reloaded, then lost'],
+   [TAB.interactions, 'Title', 'conversations are named after their opening question instead of a name you can edit'],
    [TAB.interactions, 'ParticipantIds', 'a reopened conversation rebuilds its cast from who answered in it, not from the join order'],
    [TAB.messages, 'ContextShown', 'the colleague context a persona was shown is not kept'],
    [TAB.knowledge, 'SourceUrl', 'a knowledge source added as a website URL keeps its label but loses its link'],
@@ -2310,6 +2387,22 @@ function verifyPromptParity() {
           { type: 'text', label: '',               text: 'No signature authority below VP.' }
         ],
         guardrails: 'Never give legal advice outside the US.', outOfScope: ''
+      } },
+    /* The same role as the first fixture, with a nickname. Two things are being
+     * proved at once: that both implementations build the nickname clause
+     * identically, and — by the first fixture's hash being untouched above —
+     * that a persona WITHOUT one still fingerprints exactly as it did before
+     * the field existed. That second half is why adding this never sent a
+     * single already-answered brief back as STALE_BRIEF. */
+    { name: 'nickname', expected: 'e2cd6349', role: {
+        title: 'VP of Sales', nickname: 'Dana',
+        company: 'Northwind Cloud', deptName: 'Sales',
+        personality: 'Direct and coachable.',
+        context: 'Nine reps, $48K average deal.',
+        task: 'Call the forecast honestly.',
+        outcome: 'A committed number.',
+        knowledge: ['CRM opportunity records', 'Forecast history'],
+        guardrails: '', outOfScope: ''
       } }
   ];
   var failed = [];
