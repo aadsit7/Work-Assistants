@@ -22,8 +22,10 @@
 
   /* The rail is its own little theme, dark in both appearances, which is what
      makes the workspace read as one object with a spine rather than as two
-     panes of the same white. */
-  --sb:#3F0E40; --sb-2:#350D36;
+     panes of the same white. Deep navy: darker than the aubergine it replaced
+     (relative luminance .016 against .017), so every contrast figure the rail
+     was measured at holds or improves. */
+  --sb:#002244; --sb-2:#001B36;
   --sb-txt:rgba(255,255,255,.72); --sb-dim:rgba(255,255,255,.56);
   --sb-strong:#FFFFFF;
   --sb-hover:rgba(255,255,255,.07);
@@ -37,7 +39,7 @@ body.dark{
   --hover:rgba(255,255,255,.045);
   --shadow:0 1px 3px rgba(0,0,0,.5), 0 4px 14px rgba(0,0,0,.45);
   --shadow-lift:0 4px 14px rgba(0,0,0,.6), 0 14px 34px rgba(0,0,0,.6);
-  --sb:#121016; --sb-2:#0E0C11;
+  --sb:#08131F; --sb-2:#050D16;
   --sb-txt:rgba(255,255,255,.7); --sb-dim:rgba(255,255,255,.52);
   --sb-hover:rgba(255,255,255,.06);
   --sb-sep:rgba(255,255,255,.1);
@@ -72,7 +74,7 @@ button{font-family:inherit; color:inherit; background:none; border:0; padding:0;
 input,textarea{font-family:inherit}
 :focus-visible{outline:2.5px solid var(--accent); outline-offset:3px; border-radius:8px}
 /* the rail and the nav are dark in both themes, and a dark-blue accent ring on
-   aubergine is not a ring anyone can see */
+   a deep navy is not a ring anyone can see */
 .side :focus-visible,.nav :focus-visible{outline-color:#FFFFFF; outline-offset:-1px}
 
 /* ---------- nav ----------
@@ -2436,17 +2438,28 @@ function renderChart(){
    AN ACCENT YOU CAN PICK IS NOT AN ACCENT YOU CAN FILL WITH
 
    The rail's selected row is a solid block of the accent with white
-   text on it, and the accent is something the user chooses. Chosen
-   for a button on a white page, several of them are far too light to
-   carry white text: on #F08C00 white reads at 2.5:1 and on #28A745 at
-   3.1:1, both well under the 4.5:1 that ordinary text needs.
+   text on it, sitting on the rail. That is two contrast requirements
+   at once, pulling in opposite directions, against a colour the user
+   chooses:
 
-   Flipping the label to black on those would make one row in the rail
-   look unlike every other row in it. So the fill is darkened instead —
-   in 5% steps toward black, stopping at the first one that carries
-   white, and no further. #1264A3 passes untouched; #0A84FF gives up
-   15% and is still recognisably itself.
+     · white on the fill  >= 4.5:1  — or the label is unreadable
+     · fill on the rail   >= 3:1    — or the selection is invisible
+
+   Chosen for a button on a white page, several accents are far too
+   light for the first: white on #F08C00 reads at 2.5:1. And #3A3A3C
+   is so dark it fails the second — on the rail it came out at 1.4:1,
+   a selected row you cannot see is selected. Both were real.
+
+   The two rules are one luminance window, so the fill is walked into
+   it: toward black when it is too light to carry the label, toward
+   white when it is too dark to lift off the rail, in 0.5% steps,
+   stopping at the first colour inside. An accent already in the
+   window is left exactly as it was picked. The window is computed
+   from the rail actually in use, so it re-fits itself in dark mode
+   and would re-fit again if the rail colour ever changed.
 ================================================================= */
+const SEL_TEXT_MIN = 4.5;   // white label on the fill
+const SEL_RAIL_MIN = 3;     // the fill against the rail behind it
 const RGB_RE = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i;
 function toRGB(hex){
   const m = RGB_RE.exec(String(hex || "").trim());
@@ -2456,23 +2469,42 @@ function relLuminance(rgb){
   const ch = v => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
   return 0.2126 * ch(rgb[0]) + 0.7152 * ch(rgb[1]) + 0.0722 * ch(rgb[2]);
 }
-/* contrast of white text against a background of this luminance */
-const whiteOn = L => 1.05 / (L + 0.05);
+const toHex = c => "#" + c.map(v =>
+  Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
+/* Luminance of the rail as it is right now — read back rather than hardcoded,
+   so the light and dark rails each get their own window without this having to
+   know which one is up. */
+function railLuminance(){
+  const rgb = toRGB(getComputedStyle(document.body).getPropertyValue("--sb"));
+  return rgb ? relLuminance(rgb) : 0.016;
+}
 const fillCache = new Map();
-function readableFill(hex){
-  if(fillCache.has(hex)) return fillCache.get(hex);
+function readableFill(hex, railL){
+  if(railL === undefined) railL = railLuminance();
+  const key = hex + "@" + railL.toFixed(4);
+  if(fillCache.has(key)) return fillCache.get(key);
   const rgb = toRGB(hex);
   let out = hex;
   if(rgb){
-    for(let k = 0; k <= 100; k += 5){
-      const c = rgb.map(v => Math.round(v * (100 - k) / 100));
-      if(whiteOn(relLuminance(c)) >= 4.5){
-        out = "#" + c.map(v => v.toString(16).padStart(2, "0")).join("");
-        break;
+    const maxL = 1.05 / SEL_TEXT_MIN - 0.05;
+    /* clamped: a rail light enough to make these two rules contradict would
+       otherwise return a fill that cannot carry its own label */
+    const minL = Math.min(maxL, SEL_RAIL_MIN * (railL + 0.05) - 0.05);
+    const L = relLuminance(rgb);
+    if(L < minL || L > maxL){
+      const target = L > maxL ? [0, 0, 0] : [255, 255, 255];
+      let legible = null;
+      for(let k = 0; k <= 1.0005; k += 0.005){
+        const c = rgb.map((v, i) => v + (target[i] - v) * k);
+        const cl = relLuminance(c);
+        if(cl > maxL) continue;
+        if(legible === null) legible = c;        // legibility first, always reachable
+        if(cl >= minL){ legible = c; break; }
       }
+      if(legible) out = toHex(legible);
     }
   }
-  fillCache.set(hex, out);
+  fillCache.set(key, out);
   return out;
 }
 

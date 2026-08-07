@@ -195,12 +195,20 @@ filling everything else.
   there. The state persists per browser.
 - **The conversation fills the window.** The capped, centred column is gone —
   a wide window gave you a narrow document with two empty margins.
-- **The accent still yours, still readable.** The selected row in the rail is a
-  solid block of your accent with white text on it, and several of the accents
-  on offer are far too light to carry white — on the orange it reads at 2.5:1,
-  well under the 4.5:1 ordinary text needs. Rather than flip that one row's
-  label to black, the fill is darkened just far enough to carry white and no
-  further, so the colour you picked is still the colour you see.
+- **The rail is a deep navy**, and the same colour runs across the top bar, so
+  the chrome reads as one piece and the conversation is the only white in the
+  window.
+- **The accent still yours, still readable.** The selected row is a solid block
+  of your accent, with white text, sitting on the rail — two contrast rules at
+  once, pulling opposite ways. White needs 4.5:1 against the fill, and several
+  accents are far too light for that (on the orange, 2.5:1). The fill needs 3:1
+  against the rail, and the graphite is far too dark for that (1.4:1 — a
+  selected row you cannot see is selected). Those two rules are one luminance
+  window, and the fill is walked into it: darkened when it's too light to carry
+  the label, lightened when it's too dark to lift off the rail, stopping at the
+  first colour that satisfies both. An accent already in the window is left
+  exactly as you picked it, and the window is measured from the rail actually
+  in use, so dark mode gets its own.
 
 ## The side menu
 
