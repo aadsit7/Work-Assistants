@@ -195,6 +195,20 @@ filling everything else.
   there. The state persists per browser.
 - **The conversation fills the window.** The capped, centred column is gone —
   a wide window gave you a narrow document with two empty margins.
+- **The rail is a deep navy**, and the same colour runs across the top bar, so
+  the chrome reads as one piece and the conversation is the only white in the
+  window.
+- **The accent still yours, still readable.** The selected row is a solid block
+  of your accent, with white text, sitting on the rail — two contrast rules at
+  once, pulling opposite ways. White needs 4.5:1 against the fill, and several
+  accents are far too light for that (on the orange, 2.5:1). The fill needs 3:1
+  against the rail, and the graphite is far too dark for that (1.4:1 — a
+  selected row you cannot see is selected). Those two rules are one luminance
+  window, and the fill is walked into it: darkened when it's too light to carry
+  the label, lightened when it's too dark to lift off the rail, stopping at the
+  first colour that satisfies both. An accent already in the window is left
+  exactly as you picked it, and the window is measured from the rail actually
+  in use, so dark mode gets its own.
 
 ## The side menu
 
@@ -271,6 +285,18 @@ without fighting a 68%-wide balloon for room, and what makes a thread with four
 people in it readable as a transcript. Runs by the same person inside five
 minutes collapse into the first row's header, so a signed transcript doesn't
 become a stack of name tags; a collapsed row shows its own time on hover.
+
+**Nothing the app says is signed with a persona's name.** A failed request
+carries the persona's id so a retry knows who to ask again, but that id is
+routing, not authorship — putting "Couldn't get a reply" under someone's face
+would attribute words to them they never said, in the one place a reader is
+least able to tell the difference. Failures and system notes render unsigned,
+and they end a run, so the answer that follows one always re-introduces its
+author.
+
+A **date divider** marks each day the conversation ran across, labelled with
+the day itself — the buckets in the side menu ("Previous 7 days") are right for
+sorting a list into piles and wrong on a divider, which marks one specific day.
 
 ## What an answer looks like
 
