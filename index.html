@@ -17,6 +17,14 @@
   --shadow:0 1px 3px rgba(0,0,0,.08), 0 4px 12px rgba(0,0,0,.08);
   --shadow-lift:0 4px 12px rgba(0,0,0,.12), 0 12px 28px rgba(0,0,0,.16);
   --railW:clamp(260px,20vw,300px);
+  /* One measure for the whole conversation. Every part of it — a message row,
+     the intro, the date rules, the cast, the composer — is laid out on this
+     column and centred in the pane, so on a wide display they all share one
+     left edge and one right edge instead of each finding its own. Below this
+     width the column is simply the pane, which is why a laptop sees no
+     margins at all. --gut is the inset every one of them uses inside it. */
+  --col:960px;
+  --gut:20px;
   --spring:cubic-bezier(.32,.72,0,1);
   --sans:"Lato",-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
 
@@ -155,8 +163,15 @@ body.rail-off .navTitle{display:flex}
 .side .sideSearch input{font-size:13.5px;color:var(--sb-strong)}
 .side .sideSearch input::placeholder{color:var(--sb-dim)}
 /* one scroller for both sections */
-.sideScroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding-bottom:24px;scrollbar-width:thin}
+/* The track is transparent on purpose: left to its default it painted a pale
+   strip down the join between the rail and the conversation, which read as a
+   third column neither of them had asked for. */
+.sideScroll{
+  flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding-bottom:24px;
+  scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.2) transparent;
+}
 .sideScroll::-webkit-scrollbar{width:8px}
+.sideScroll::-webkit-scrollbar-track{background:transparent}
 .sideScroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:4px}
 .sideSect{padding-top:6px}
 .sectHead{display:flex;align-items:center;gap:2px;padding:0 8px 0 8px}
@@ -385,19 +400,23 @@ body.no-motion .avatar .mark,body.no-motion .avatar .wave rect,body.no-motion .a
 }
 /* The header row holds separate controls — the role switcher is itself a
    button, so the facepile and the speaker toggle must be flex siblings,
-   never children. */
+   never children. Brief/Chat sits in this row too: as its own band it was a
+   third left edge under the title and the thread, and a second hairline
+   40px below the first. One row, one rule: who you are talking to and what
+   you are looking at on the left, everything you can do on the right. */
 .cardHead{
-  display:flex;align-items:center;gap:8px;flex:none;min-height:49px;
+  display:flex;align-items:center;gap:8px;flex:none;min-height:52px;
   padding-right:16px;
   border-bottom:1px solid var(--sep);background:var(--card);
 }
-/* The name button is only as wide as the name — margin-right:auto is what
-   pushes the members and the tools to the far edge, so hovering the title
-   doesn't light up half the header. */
+/* The name button is only as wide as the name, and .headSpace is what pushes
+   the members and the tools to the far edge — so hovering the title doesn't
+   light up half the header. */
 .cardTop{
-  padding:6px 8px 6px 12px;margin:0 auto 0 8px;display:flex;gap:6px;align-items:center;
+  padding:6px 8px 6px 12px;margin:0 0 0 8px;display:flex;gap:6px;align-items:center;
   flex:0 1 auto;min-width:0;border-radius:6px;
 }
+.headSpace{flex:1;min-width:8px}
 .cardTop:hover{background:var(--hover)}
 .cardTop .avatar{width:26px;height:26px;flex:none;border-radius:5px}
 .cardTop .meta{min-width:0;flex:1}
@@ -448,7 +467,12 @@ body.no-motion .avatar .mark,body.no-motion .avatar .wave rect,body.no-motion .a
   display:grid;place-items:center;flex:none;font-size:15px;line-height:1;transition:transform .3s var(--spring)
 }
 .close:active{transform:scale(.86)}
-.cardBody{padding:4px 20px 24px;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0}
+/* The brief reads on the same column the conversation does — the scroller
+   still spans the pane, so its bar stays at the window edge, but every field
+   and every rule under it lines up with where the messages are. Switching
+   tabs shouldn't move the left edge of the page. */
+.cardBody{padding:4px var(--gut) 24px;overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0}
+.cardBody > *{max-width:calc(var(--col) - var(--gut) * 2);margin-inline:auto}
 .field{padding:16px 0;border-bottom:.5px solid var(--sep)}
 .field:last-of-type{border-bottom:0}
 .field h3{
@@ -462,7 +486,11 @@ body.no-motion .avatar .mark,body.no-motion .avatar .wave rect,body.no-motion .a
   color:color-mix(in srgb, var(--tint) 72%, var(--label));
 }
 body.dark .chip{color:color-mix(in srgb, var(--tint) 78%, #fff)}
-.cardFoot{padding:14px 20px calc(18px + env(safe-area-inset-bottom,0px));border-top:.5px solid var(--sep);flex:none}
+.cardFoot{
+  padding:14px var(--gut) calc(18px + env(safe-area-inset-bottom,0px));
+  border-top:.5px solid var(--sep);flex:none;display:flex;
+}
+.cardFoot > *{max-width:calc(var(--col) - var(--gut) * 2);margin-inline:auto}
 .wideBtn{
   width:100%;padding:13px;border-radius:14px;background:var(--accent);color:#fff;
   font-size:16px;font-weight:600;letter-spacing:-.01em;transition:transform .3s var(--spring),filter .2s;
@@ -633,11 +661,11 @@ body.dark .pill.ok{color:#5FD97C}
   font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.55;
   color:var(--label2);white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto}
 /* These sit directly in #thread, which has no side padding of its own — every
-   other child of the thread insets itself, and a notice that didn't would run
-   edge to edge. */
+   other child of the thread lays itself out on the column, and a notice that
+   didn't would run the whole width of the pane. */
 .notice{
   border-radius:8px;padding:11px 14px;font-size:13.5px;line-height:1.5;
-  margin:0 20px 8px;flex:none;
+  flex:none;width:100%;max-width:calc(var(--col) - var(--gut) * 2);margin:0 auto 8px;
 }
 .notice.warn{background:color-mix(in srgb,var(--danger) 10%,transparent);color:var(--danger)}
 .notice.info{background:var(--field);color:var(--label2)}
@@ -694,17 +722,22 @@ body.rail-off .bannerRow{padding-left:20px}
 body.no-motion .spinner{animation-duration:1.6s}
 
 /* ---------- messenger ----------
-   Messages / Brief read as the channel's tabs, underlined, sitting on the
-   header's rule — not as a full-width switch competing with it. */
-.tabs{padding:0 20px;border-bottom:1px solid var(--sep);background:var(--card);flex:none}
+   Brief / Chat live in the header row rather than in a strip beneath it: no
+   band of their own, no second hairline 40px under the first, and a divider
+   instead of a border, so they read as the second half of the title group
+   rather than as a switch competing with it. */
+.tabs{
+  flex:none;display:flex;align-items:center;align-self:stretch;
+  padding-left:10px;margin-left:2px;border-left:1px solid var(--sep);
+}
 .tabs .seg{width:auto;background:none;border-radius:0;padding:0;gap:2px}
 .tabs .seg .thumb{display:none}
 .tabs .seg button{
-  flex:none;padding:9px 12px 7px;font-size:13.5px;font-weight:700;color:var(--label2);
-  border-bottom:2px solid transparent;border-radius:0;
+  flex:none;padding:6px 11px;font-size:13.5px;font-weight:700;color:var(--label2);
+  border-radius:6px;
 }
-.tabs .seg button:hover{color:var(--label)}
-.tabs .seg button[aria-pressed="true"]{color:var(--label);border-bottom-color:var(--label)}
+.tabs .seg button:hover{color:var(--label);background:var(--hover)}
+.tabs .seg button[aria-pressed="true"]{color:var(--label);background:var(--field)}
 .chat{display:none;flex:1 1 auto;min-height:0;flex-direction:column}
 .card.chatting .cardBody,.card.chatting #footBrief{display:none}
 .card.chatting .chat{display:flex}
@@ -712,9 +745,17 @@ body.no-motion .spinner{animation-duration:1.6s}
   flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
   padding:16px 0 18px;display:flex;flex-direction:column;
 }
+/* A short conversation sits on the composer, the way every thread of two
+   messages does, rather than starting at the ceiling with the height of the
+   window under it. An auto margin on the first row and not
+   justify-content:flex-end — the latter makes the top of a long thread
+   unreachable once it overflows, and an auto margin simply resolves to zero
+   there. */
+.thread > :first-child{margin-top:auto}
 /* the date divider, as a rule with the day sitting on it */
 .stamp{
-  position:relative;display:flex;justify-content:center;margin:10px 16px 14px;flex:none;
+  position:relative;display:flex;justify-content:center;flex:none;
+  width:100%;max-width:var(--col);margin:10px auto 14px;padding:0 16px;
 }
 .stamp::before{content:"";position:absolute;left:0;right:0;top:50%;border-top:1px solid var(--sep)}
 .stamp span{
@@ -736,7 +777,8 @@ body.no-motion .spinner{animation-duration:1.6s}
 ================================================================= */
 .msg{
   display:flex;gap:8px;align-items:flex-start;
-  padding:6px 20px;position:relative;
+  padding:6px var(--gut);position:relative;
+  width:100%;max-width:var(--col);margin-inline:auto;
 }
 .msg:hover{background:var(--hover)}
 .msg.cont{padding-top:2px;padding-bottom:2px}
@@ -765,7 +807,7 @@ body.no-motion .spinner{animation-duration:1.6s}
    to be part of it. */
 .msg.err{padding-left:64px}
 .errBar{
-  flex:1;min-width:0;max-width:860px;padding:8px 12px;border-radius:0 6px 6px 0;
+  flex:1;min-width:0;max-width:100%;padding:8px 12px;border-radius:0 6px 6px 0;
   color:var(--danger);background:color-mix(in srgb,var(--danger) 8%,transparent);
   border-left:3px solid var(--danger);
 }
@@ -781,10 +823,10 @@ body.no-motion .spinner{animation-duration:1.6s}
    the moment it holds real blocks, and anything that cannot wrap — a table, a
    code block — scrolls inside its own box so the thread never does. */
 .bubble.rich{white-space:normal}
-/* A sectioned answer wants a reading measure rather than the whole of a wide
-   window; a plain reply is fine running longer. Both are capped rather than
-   centred, so every row still starts on the same left edge as its avatar. */
-.bubble.wide{max-width:min(100%,860px)}
+/* The reading measure is the column the whole conversation sits on now, so a
+   sectioned answer fills its row rather than capping itself a second time at
+   a width nothing else in the pane shares. */
+.bubble.wide{max-width:100%}
 .ans{display:flex;flex-direction:column;gap:11px}
 .ans > .sect{display:flex;flex-direction:column;gap:5px}
 .ans > .sect + .sect{border-top:.5px solid var(--sep);padding-top:11px}
@@ -822,11 +864,16 @@ body.no-motion .spinner{animation-duration:1.6s}
 .ans tr:last-child td{border-bottom:0}
 /* the restatement reads as a quiet header, not as part of the answer */
 .ans .sect[data-kind="question"] .body{color:var(--label2);font-size:14px;line-height:1.45}
-/* what the answer rests on, listed so it can be checked */
+/* What the answer rests on, listed so it can be checked. Four names set as
+   four full-width bars read as an interface with four buttons in it; they are
+   labels, so they take the width of their words and wrap. */
 .ans .sect[data-kind="sources"] .body{font-size:13.5px;line-height:1.5;color:var(--label2)}
-.ans .sect[data-kind="sources"] ul{list-style:none;padding-left:0;gap:5px}
+.ans .sect[data-kind="sources"] ul{
+  list-style:none;padding-left:0;flex-direction:row;flex-wrap:wrap;gap:6px;
+}
 .ans .sect[data-kind="sources"] li{
-  padding:5px 11px;border-radius:9px;background:color-mix(in srgb,var(--tint,#8E8E93) 12%,transparent);
+  padding:4px 11px;border-radius:999px;max-width:100%;
+  background:color-mix(in srgb,var(--tint,#8E8E93) 12%,transparent);
 }
 .msg.err .bubble a,.msg.me .bubble a{color:inherit;text-decoration:underline}
 .dots{display:flex;gap:5px;padding:10px 0 4px}
@@ -834,20 +881,26 @@ body.no-motion .spinner{animation-duration:1.6s}
 .dots i:nth-child(2){animation-delay:.16s}
 .dots i:nth-child(3){animation-delay:.32s}
 @keyframes dot{0%,60%,100%{opacity:.32;transform:translateY(0)}30%{opacity:1;transform:translateY(-4px)}}
-/* Desktop: the empty state doesn't float in the vertical center of a tall
-   pane — it anchors above the composer, in the lower reach of the thread.
-   Mobile restores the centered version. */
-/* The start of a channel: who this is, said once, at the top of the column
-   where the first message will land — not floating in the middle of an
-   empty pane. */
-.empty{margin:0 0 auto;width:100%;max-width:640px;text-align:left;padding:10px 20px 20px}
-.empty .avatar{width:64px;height:64px;margin:0 0 12px;border-radius:14px}
+/* The start of a channel: who this is, said once, sitting on the composer
+   where the first message will land — so the intro, the openers and the box
+   you type in read as one thing to start with, rather than as a heading at
+   the ceiling and a field at the floor with the window in between. A short
+   thread settles the same way, so nothing jumps when the first answer
+   arrives.
+
+   margin-top:auto, not margin-bottom: this is the last thing in a column
+   flexbox, so an auto top margin is what settles it onto the composer. The
+   other way round pinned it to the ceiling. */
+.empty{margin:auto auto 0;width:100%;max-width:var(--col);text-align:left;padding:24px var(--gut) 16px}
+.empty .avatar{width:52px;height:52px;margin:0 0 12px;border-radius:12px}
 .empty h4{margin:0 0 6px;font-size:24px;font-weight:900;letter-spacing:-.02em}
-.empty p{margin:0 0 18px;font-size:14px;color:var(--label2);line-height:1.5;max-width:56ch}
-.starters{display:flex;flex-direction:column;gap:6px;text-align:left}
+.empty p{margin:0 0 16px;font-size:14px;color:var(--label2);line-height:1.5;max-width:56ch}
+/* The openers read as a set of alternatives, so they size to their words and
+   wrap — three full-width bars stacked down the page read as a form. */
+.starters{display:flex;flex-wrap:wrap;gap:7px;text-align:left}
 .starter{
-  padding:9px 13px;border-radius:6px;border:1px solid var(--sep);background:none;
-  font-size:14px;color:var(--label);transition:background .12s ease,border-color .12s ease;
+  padding:8px 13px;border-radius:999px;border:1px solid var(--sep);background:none;
+  font-size:13.5px;color:var(--label);transition:background .12s ease,border-color .12s ease;
 }
 .starter:hover{background:var(--hover);border-color:var(--line)}
 /* The composer is one bordered box that owns its buttons, rather than a pill
@@ -856,7 +909,8 @@ body.no-motion .spinner{animation-duration:1.6s}
    up on focus instead of the field inside it. */
 .composer{
   display:none;gap:6px;align-items:flex-end;flex:none;position:relative;
-  margin:6px 20px calc(18px + env(safe-area-inset-bottom,0px));
+  width:100%;max-width:calc(var(--col) - var(--gut) * 2);
+  margin:6px auto calc(18px + env(safe-area-inset-bottom,0px));
   padding:6px 6px 6px 0;
   border:1px solid var(--line);border-radius:8px;background:var(--card);
   transition:border-color .12s ease, box-shadow .12s ease;
@@ -967,10 +1021,16 @@ body.no-motion .spinner{animation-duration:1.6s}
 .handoffPill button{color:var(--accent);font-weight:700;font-size:12.5px}
 .handoffPill button:hover{text-decoration:underline}
 /* the cast: everyone in this conversation, one tap to hand it to any of them */
-.castBar{display:none;align-items:center;gap:6px;flex:none;padding:8px 20px 0}
+.castBar{
+  display:none;align-items:center;gap:6px;flex:none;padding:8px var(--gut) 0;
+  width:100%;max-width:var(--col);margin-inline:auto;
+}
 .card.chatting .castBar{display:flex}
+/* The row takes only the width its chips need, so "Bring in" lands next to
+   the last face. Given the whole bar it parked at the far edge of the pane,
+   a lone button with the people it adds to nowhere near it. */
 .castRow{
-  display:flex;align-items:center;gap:5px;flex:1;min-width:0;
+  display:flex;align-items:center;gap:5px;flex:0 1 auto;min-width:0;
   overflow-x:auto;scrollbar-width:none;padding-bottom:2px;
 }
 .castRow::-webkit-scrollbar{display:none}
@@ -1159,6 +1219,10 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
 
 /* ---------- responsive ---------- */
 @media (max-width:900px){
+  /* A phone is narrower than the column, so the column becomes the pane and
+     every rule written against it keeps working — nothing needs a second
+     layout, only a tighter gutter. */
+  :root{--col:100%;--gut:14px}
   .seg.paneSwitch{display:flex}
   .card{width:100%;border-right:0;box-shadow:none}
   body.showing-chart .card{display:none}
@@ -1188,7 +1252,7 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
   /* A phone has no room for a 36px gutter beside every message: the avatar
      shrinks, the row loses its side padding, and the run-collapsing does the
      rest of the work. */
-  .msg{padding:5px 14px;gap:7px}
+  .msg{padding:5px var(--gut);gap:7px}
   /* keep the unsigned error lined up with where the signed rows' words start:
      side padding + avatar + gap, all three of which shrink here */
   .msg.err{padding-left:51px}
@@ -1196,16 +1260,23 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
   .who .avatar{width:30px;height:30px;border-radius:7px}
   .whoName{font-size:14.5px}
   .thread{padding-top:12px}
-  .composer{margin:6px 14px calc(12px + env(safe-area-inset-bottom,0px))}
-  .castBar{padding:8px 14px 0}
+  .composer{margin:6px auto calc(12px + env(safe-area-inset-bottom,0px))}
   /* the name gets the whole bar on a phone — the department is the first
      thing worth losing when there isn't room for both */
   .cardTop{padding-left:8px;margin-left:6px}
   .cardTop .eyebrow{display:none}
-  .cardHead{padding-right:6px}
-  .tabs{padding:0 14px}
-  .empty{margin:0 0 auto;max-width:none;padding:10px 14px 20px}
+  .cardHead{padding-right:6px;flex-wrap:wrap;row-gap:0}
+  /* No room to sit beside the name here, so the tabs take a full-width line
+     of their own and wrap under it — the same two rows as before, from the
+     same markup the wide layout puts on one. */
+  .tabs{
+    order:9;width:100%;align-self:auto;
+    border-left:0;border-top:1px solid var(--sep);
+    padding:2px var(--gut);margin-left:0;
+  }
+  .empty{max-width:none;padding:20px var(--gut) 12px}
   .empty h4{font-size:21px}
+  .empty .avatar{width:46px;height:46px}
   .head{text-align:center;padding:26px 20px 2px}
   .head h1{font-size:27px;font-weight:700;letter-spacing:-.026em;text-transform:none;color:var(--label);line-height:1.12}
   .head p{display:block;font-size:13px}
@@ -1286,10 +1357,13 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
             <span>Conversations</span>
           </button>
         </div>
-        <div class="sidePane" id="paneChats"></div>
+        <!-- Above the list, not under it: below, it sat past the history and
+             past the Sheet status line, so the one thing you came to do moved
+             down the rail every time you did it. -->
         <button class="sideAdd" id="newChatRow">
           <span class="plus" aria-hidden="true">+</span>New chat
         </button>
+        <div class="sidePane" id="paneChats"></div>
       </section>
       <section class="sideSect" id="sectTeam">
         <div class="sectHead">
@@ -1334,6 +1408,16 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
     </div>
     <svg class="pickChev" viewBox="0 0 14 8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1l6 6 6-6"/></svg>
   </button>
+  <!-- Brief and Chat are two views of the same person, so they sit beside the
+       name rather than in a strip of their own underneath it. -->
+  <div class="tabs">
+    <div class="seg b" id="tabSeg">
+      <span class="thumb"></span>
+      <button data-tab="brief" aria-pressed="false">Brief</button>
+      <button data-tab="chat" aria-pressed="true">Chat</button>
+    </div>
+  </div>
+  <div class="headSpace"></div>
   <!-- Who is in this conversation, as faces, with the count — and the way to
        add somebody. Same job the cast bar does above the composer; this is
        the copy of it that is visible before you scroll. -->
@@ -1352,13 +1436,6 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6.5 8.5H3.5v7h3L11 19V5Z"/><path d="M15 9.5a4 4 0 0 1 0 5"/><path d="M17.5 7a8 8 0 0 1 0 10"/></svg>
   </button>
   </div>
-  </div>
-  <div class="tabs">
-    <div class="seg b" id="tabSeg">
-      <span class="thumb"></span>
-      <button data-tab="brief" aria-pressed="false">Brief</button>
-      <button data-tab="chat" aria-pressed="true">Chat</button>
-    </div>
   </div>
   <div class="cardBody" id="cardBody"></div>
   <div class="chat" id="chat">
