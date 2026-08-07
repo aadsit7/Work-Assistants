@@ -1806,16 +1806,25 @@ const SHEET_ENDPOINT = "https://script.google.com/macros/s/AKfycbzowjBwMMSEWcDHW
      1. localStorage       — a token pasted into Settings › Chat
      2. the URL            — ?token=… or #token=… , adopted once and
                               then scrubbed out of the address bar
-     3. SHEET_TOKEN below  — committed, so it is simply always there
+     3. SHEET_TOKEN below  — in the published page, so it is simply
+                              always there
 
-   Fill SHEET_TOKEN in and there is no first-run step left at all: any
+   With SHEET_TOKEN filled there is no first-run step left at all: any
    browser that can open this page opens it connected. That is the
-   whole point, and it is also a real credential sitting in a file
-   anyone who can load the page can read — whoever reaches this page
-   can read and write the Sheet behind it and spend the Anthropic key
-   it proxies. Right trade for a workspace page whose URL you keep to
-   yourself; wrong one for a page you hand out. Rotating it is one
-   edit here plus APP_TOKEN in the Apps Script's Script Properties.
+   whole point, and it is also a real credential in a file anyone who
+   can load the page can read — whoever reaches this page can read and
+   write the Sheet behind it and spend the Anthropic key it proxies.
+   Right trade for a workspace page whose URL you keep to yourself;
+   wrong one for a page you hand out.
+
+   PREFER NOT TO FILL THIS IN BY HAND. .github/workflows/pages.yml
+   substitutes it at deploy time from a repository secret, which gets
+   the same result without the token ever entering the repository or
+   its history — so rotating is a change to the secret plus APP_TOKEN
+   in Script Properties, rather than a history rewrite. That workflow
+   is off until switched on; see the README. Editing this line still
+   works and is still supported, it just costs more to undo, and on a
+   public repo the value is published the moment it is pushed.
 
    Leave it empty and nothing about the old behaviour changes: layers
    1 and 2 still work, and the app still waits to be told.
