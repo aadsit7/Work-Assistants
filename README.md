@@ -270,6 +270,68 @@ Picking someone from the chart or the outline still opens the conversation you
 were having with *them*; only people already in the current conversation stay in
 it when you click them.
 
+## Listening: a room of them, and one at a time
+
+The **ambient listening** button in the header arms the microphone. From then on
+the page hears what is said in the room, decides whether any of it was a
+question worth answering, and answers it out loud — off by default, one click
+to arm, one click to stop.
+
+With one persona open that gate is theirs alone: their Task and their Context
+decide whether an overheard sentence is something they own. With more than one
+in the conversation it becomes a **room**, and the interesting part is not that
+several of them are listening — a browser has one speech recogniser, so there
+is one ear, not one per persona. It is that only ever one of them answers, and
+nobody is talked over.
+
+An utterance is routed like this:
+
+1. **Say a name and it goes there.** "General Counsel, can we sign this without
+   a DPA?" is a decision, not a vote. Roles answer to their title and to the
+   distinctive part of it, so *Head of Marketing* also answers to *Marketing* —
+   but only when a name appears where you would actually address somebody, at
+   the front of the sentence or the end of it. "We should ask marketing about
+   that sometime" is talking *about* them, and is routed like anything else.
+   A word two people in the room both answer to addresses neither.
+2. **Otherwise the room votes.** Every persona present runs the same gate at
+   the same time, each scoped by its own brief. The instructions behind the
+   scenes are the whole of the configuration — nothing anywhere says "route
+   pricing to Sales", and nothing needs to. Whoever clears the confidence bar
+   and ranks highest takes the floor.
+3. **Whoever just spoke gives way in a close call.** A persona that answered in
+   the last minute carries a small penalty. It moves the ranking only, never
+   the bar: it can break a near-tie toward somebody who has not just spoken,
+   and it can neither let an unqualified persona in nor push a qualified one
+   out.
+4. **At most one other adds to it.** If a second persona is independently sure
+   and is answering a genuinely different question, it takes the floor after
+   the first — so "where's pipeline, and is there contract risk in it?" gets
+   both halves. If the two would be answering the same question, or the gate
+   never named what it was answering, the room stays with one voice. Six
+   personas never become a chorus.
+
+Nobody is cut off. Answers queue and are read out one turn at a time, each in
+its own voice — two personas in one room are never assigned the same one, so
+you can tell who is talking without reading the transcript. The only thing that
+takes the floor away mid-sentence is you: type a message, or press **Stop** on
+the listening bar, and the room goes quiet without giving up the microphone.
+
+The bar tells you what is happening while it happens — who has the floor, who
+is waiting behind them, and how many utterances are queued — and the chips on
+the cast bar carry the same state: a live dot for everyone listening, a ring
+around whoever is answering, a dashed outline for whoever is next. **Log** opens
+the decision list, and every overheard question ends up in it with the whole
+vote: who wanted it, how sure each of them was, who took it, and why. Nothing
+is ever silently dropped — a question is answered, declined with a reason, or
+reported as a failure.
+
+Two limits worth knowing. The microphone is closed while the room is speaking,
+because the page cannot cancel its own audio out of what it hears — so you
+cannot interrupt by voice, only by typing or pressing Stop. And one recogniser
+means one language at a time: a room whose members share a language uses it,
+and a mixed one listens in the language of the persona on screen rather than
+pretending to follow both.
+
 ## Every message is signed
 
 Attribution used to be conditional. A reply wore its author's mark only once a

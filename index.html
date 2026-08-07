@@ -1047,6 +1047,25 @@ body.no-motion .spinner{animation-duration:1.6s}
   background:color-mix(in srgb,var(--tint) 12%,transparent);
   border-color:color-mix(in srgb,var(--tint) 45%,transparent);
 }
+/* ---------- the room, on the cast bar ----------
+   With the microphone armed the chips stop being only a switcher and become
+   the room's status: everybody is listening, one of them has the floor, and
+   anyone waiting to answer says so before they start. */
+.castChip .st{
+  width:6px;height:6px;border-radius:50%;flex:none;background:var(--label3);
+  margin-left:1px;
+}
+.castChip:not(.hears):not(.floor):not(.next) .st{display:none}
+.castChip.hears .st{background:var(--accent);animation:ambPulse 1.8s ease-in-out infinite}
+.castChip.floor{
+  color:var(--label);font-weight:700;
+  border-color:color-mix(in srgb,var(--tint) 70%,transparent);
+  box-shadow:0 0 0 2px color-mix(in srgb,var(--tint) 22%,transparent);
+}
+.castChip.floor .st{background:var(--tint);animation:none}
+.castChip.next{border-style:dashed}
+.castChip.next .st{background:var(--label3);animation:none}
+body.no-motion .castChip.hears .st{animation:none}
 .castAdd{
   flex:none;padding:4px 11px;border-radius:6px;background:none;border:1px solid var(--sep);
   color:var(--accent);font-size:12.5px;font-weight:700;transition:background .12s ease;
@@ -1076,6 +1095,26 @@ body.no-motion .spinner{animation-duration:1.6s}
 .ambientTxt span{color:var(--label2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-style:italic}
 .ambientQ{font-size:11px;font-weight:700;color:#fff;background:var(--accent);border-radius:9px;padding:2px 7px;flex:none}
 .ambientQ[hidden]{display:none}
+/* Who holds the floor, as a face — in a room the state line says "Answering"
+   and the only thing you actually want to know is by whom. */
+.ambientWho{flex:none;display:flex;align-items:center}
+.ambientWho[hidden]{display:none}
+.ambientWho .avatar{width:20px;height:20px;display:block;border-radius:5px}
+/* and who is behind them, so a queued second answer is never a surprise */
+.ambientNext{
+  flex:none;display:flex;align-items:center;gap:5px;max-width:190px;
+  padding:2px 8px 2px 3px;border-radius:999px;font-size:11.5px;color:var(--label2);
+  background:var(--field);
+}
+.ambientNext[hidden]{display:none}
+.ambientNext .avatar{width:17px;height:17px;flex:none;display:block;border-radius:4px}
+.ambientNext .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ambientStop{
+  flex:none;padding:3px 10px;border-radius:6px;font-size:11.5px;font-weight:700;
+  color:var(--danger);background:color-mix(in srgb,var(--danger) 10%,transparent);
+}
+.ambientStop[hidden]{display:none}
+.ambientStop:hover{background:color-mix(in srgb,var(--danger) 18%,transparent)}
 .ambientBand button{font-size:12px;color:var(--accent);font-weight:600;flex:none;padding:2px 6px;border-radius:7px}
 .ambientBand button:active{background:var(--field)}
 .ambLog{max-height:180px;overflow-y:auto;border-top:.5px solid var(--sep);background:var(--card);flex:none;padding:4px 0}
@@ -1443,8 +1482,11 @@ mark{background:color-mix(in srgb,var(--accent) 30%,transparent);color:inherit;b
     <div class="ambLog" id="ambLog" hidden aria-label="Ambient decision log"></div>
     <div class="ambientBand" id="ambientBand" hidden>
       <span class="ambientDot" aria-hidden="true"></span>
+      <span class="ambientWho" id="ambientWho" hidden aria-hidden="true"></span>
       <div class="ambientTxt"><b id="ambientState">Listening</b><span id="ambientDetail">for questions to answer…</span></div>
+      <span class="ambientNext" id="ambientNext" hidden></span>
       <span class="ambientQ" id="ambientQueue" hidden></span>
+      <button class="ambientStop" id="ambientStop" hidden>Stop</button>
       <button id="ambientLogBtn" aria-expanded="false">Log</button>
     </div>
   </div>
@@ -1727,9 +1769,35 @@ function roleLexicon(role){
   lexCache.set(key, lex);
   return lex;
 }
-function pickAlternative(alts, role){
+/* In a room the ear belongs to everybody: a question for Legal must not be
+   mis-transcribed because only Marketing's vocabulary was consulted when the
+   engine's alternatives were scored. Cached on the cast's identity, so it is
+   built once per room rather than once per utterance. */
+const castLexCache = new Map();
+function castLexicon(cast){
+  const roles = (cast || []).map(roleById).filter(Boolean);
+  if(roles.length < 2) return roles.length ? roleLexicon(roles[0]) : { terms: [], away: [] };
+  const key = roles.map(r => r.id + "." + (r.version || 1)).join("|") + "|" + vocabGen;
+  const hit = castLexCache.get(key);
+  if(hit) return hit;
+  /* keyed by the term itself, so the same word carried by two personas is one
+     entry and never scores an alternative twice */
+  const terms = new Map(), away = new Map();
+  roles.forEach(r => {
+    const lex = roleLexicon(r);
+    lex.terms.forEach(e => terms.set(e.t, e));
+    lex.away.forEach(e => away.set(e.t, e));
+  });
+  const lex = { terms: [...terms.values()], away: [...away.values()] };
+  if(castLexCache.size > 32) castLexCache.clear();
+  castLexCache.set(key, lex);
+  return lex;
+}
+/* takes a role or an already-built lexicon — the room passes the merged one */
+function pickAlternative(alts, roleOrLex){
   if(!alts || !alts.length) return { transcript: "", confidence: null, index: 0 };
-  const lex = role ? roleLexicon(role) : { terms: [], away: [] };
+  const lex = !roleOrLex ? { terms: [], away: [] }
+    : (roleOrLex.terms ? roleOrLex : roleLexicon(roleOrLex));
   let best = null;
   alts.forEach((a, i) => {
     let s = typeof a.confidence === "number" ? a.confidence : 0;
@@ -2684,6 +2752,7 @@ const threads = {};              // convId -> [{role:"user"|"assistant", content
 let tab = "chat";
 const pending = new Set();       // convIds with an answer in flight
 const inflight = new Map();      // convId -> AbortController for that answer
+const answering = new Map();     // convId -> the persona writing that answer
 
 /* =================================================================
    A CONVERSATION IS A THING, NOT A PERSONA
@@ -3654,7 +3723,7 @@ const VoiceState = {
 };
 
 const Speech = {
-  voices: [], queue: [], _gen: 0,
+  voices: [], queue: [], _gen: 0, speaking: false,
   supported(){ return !!(window.speechSynthesis && window.SpeechSynthesisUtterance); },
   refreshVoices(){ try{ this.voices = speechSynthesis.getVoices() || []; }catch(e){ this.voices = []; } },
   score(v, lang){
@@ -3669,29 +3738,64 @@ const Speech = {
     if(v.default) s += 1;
     return s;
   },
-  voiceFor(role){
+  named(role){
     const want = String(role.voice || "").trim();
-    if(want && want.toLowerCase() !== "automatic"){
-      const hit = this.voices.find(v => v.name === want);
-      if(hit) return hit;
-      /* saved voice not installed here — fall through to Automatic, silently */
-    }
+    if(!want || want.toLowerCase() === "automatic") return null;
+    /* saved voice not installed here — the caller falls through to Automatic */
+    return this.voices.find(v => v.name === want) || null;
+  },
+  voiceFor(role){
+    return this.named(role) || this.autoVoice(role, null);
+  },
+  autoVoice(role, taken){
     const lang = String(role.language || "").trim() || "en-US";
-    return this.voices.slice().sort((a, b) => this.score(b, lang) - this.score(a, lang))[0] || null;
+    const ranked = this.voices.slice().sort((a, b) => this.score(b, lang) - this.score(a, lang));
+    if(taken) return ranked.find(v => !taken.has(v.name)) || ranked[0] || null;
+    return ranked[0] || null;
   },
-  speakReply(role, reply){
+  /* Two personas in one room must not share a voice, or the transcript is the
+     only way to tell who just spoke. A voice chosen by hand is a decision and
+     is never reassigned; the ones left on Automatic then take the best voice
+     nobody else has. Derived from the cast alone, so it is stable — a persona
+     keeps the same voice turn after turn as long as the room does. */
+  roomVoices(cast){
+    const ids = (cast || []).filter(roleById);
+    const out = new Map(), taken = new Set();
+    ids.forEach(id => {
+      const hit = this.named(roleById(id));
+      if(hit){ out.set(id, hit); taken.add(hit.name); }
+    });
+    ids.forEach(id => {
+      if(out.has(id)) return;
+      const pick = this.autoVoice(roleById(id), taken);
+      if(pick){ out.set(id, pick); taken.add(pick.name); }
+    });
+    return out;
+  },
+  speakReply(role, reply, opts){
     const text = spokenTextFor(reply);
-    if(text) this.speak(role, text);
+    if(text) this.speak(role, text, opts);
   },
-  speak(role, text){
+  /* opts.queue — append this turn behind whatever is already being said
+     instead of cutting it off. That is the whole of the no-interruption rule:
+     a room's answers always queue, and only you, by typing or by stopping,
+     ever take the floor away from someone mid-sentence.
+     opts.voice — the room's assignment for this persona, so two of them are
+     never read in the same voice. */
+  speak(role, text, opts){
     if(!this.supported()) return;
-    this.stop();
-    const gen = this._gen;
-    const voice = this.voiceFor(role);
+    const o = opts || {};
+    if(!o.queue) this.stop();
+    const gen = this._gen;             // read after stop(): stop() bumps it
+    const voice = o.voice || this.voiceFor(role);
     const lang = (voice && voice.lang) || String(role.language || "").trim() || "en-US";
-    this.queue = splitSentences(text).map(s => ({ s, voice, lang, roleId: role.id }));
-    if(this.queue.length) this._holdMic();
-    this._drain(gen);
+    const items = splitSentences(text).map(s => ({ s, voice, lang, roleId: role.id }));
+    if(!items.length) return;
+    this.queue = this.queue.concat(items);
+    this._holdMic();
+    /* a drain already running will pick these up from its own onend; one that
+       has finished has to be started again */
+    if(!this.speaking){ this.speaking = true; this._drain(gen); }
   },
   /* the recogniser never runs while we speak: ambient pauses for the whole
      queue, and a live dictation session is stopped rather than left to
@@ -3702,8 +3806,14 @@ const Speech = {
   },
   _releaseMic(){ Ambient.resumeAfterSpeech(); },
   _drain(gen){
-    if(gen !== this._gen) return;
-    if(!this.queue.length){ VoiceState.clear("speaking"); this._releaseMic(); return; }
+    if(gen !== this._gen) return;          // stop() already reset `speaking`
+    if(!this.queue.length){
+      this.speaking = false;
+      VoiceState.clear("speaking");
+      this._releaseMic();
+      Room.onFloorSpeechDone();
+      return;
+    }
     const item = this.queue.shift();
     const u = new SpeechSynthesisUtterance(item.s);
     if(item.voice) u.voice = item.voice;
@@ -3718,6 +3828,7 @@ const Speech = {
   stop(){
     this._gen++;
     this.queue = [];
+    this.speaking = false;
     VoiceState.clear("speaking");
     this._releaseMic();
     if(!this.supported()) return;
@@ -3924,10 +4035,28 @@ function renderThread(){
     threadNotices(r) +
     `<div class="clearBar"><button data-clear>Start a new conversation</button></div>` +
     rows +
-    (pending.has(convId) ? `<div class="msg from typing"><span class="who">${avatarSVG(r, "", 36)}</span><div class="said"><div class="dots"><i></i><i></i><i></i></div></div></div>` : "");
+    (pending.has(convId) ? typingHTML(convId) : "");
   if(!sameConv || nearBottom) box.scrollTop = box.scrollHeight;
   else box.scrollTop = wasAt;
   refreshSendUI();
+}
+/* The waiting row wears the face of whoever is actually writing the answer.
+   In a room that is often not the persona whose chip is lit: an overheard
+   question goes to whoever owns it, and a thread that showed the selected
+   persona thinking would be naming the wrong author before a word arrives.
+   Named too, once there is more than one of them, because three seconds of
+   anonymous dots is exactly when you want to know who took the question. */
+function typingHTML(key){
+  const who = roleById(answering.get(key)) || roleById(selectedId);
+  if(!who) return "";
+  const room = Room.castFor(key).length > 1;
+  return `<div class="msg from typing${room ? " tagged" : ""}" style="--tint:${deptOf(who).tint}">
+      <span class="who">${avatarSVG(who, "", 36)}</span>
+      <div class="said">
+        ${room ? `<div class="mHead"><span class="whoName">${esc(who.title)}</span></div>` : ""}
+        <div class="dots"><i></i><i></i><i></i></div>
+      </div>
+    </div>`;
 }
 /* The cast bar: everyone in this conversation, the current answerer marked,
    one tap to hand the thread to any of them. It is the whole feature in one
@@ -3941,12 +4070,28 @@ function currentCast(){
 }
 function renderCast(){
   const cast = currentCast();
+  /* every chip carries the room's state for that persona, so "who is listening,
+     who is talking, who is next" is answered by the bar you already look at */
+  const hears = Ambient.armed && !Ambient.held();
   $("#castRow").innerHTML = cast.map(id => {
     const r = roleById(id);
-    return `<button class="castChip ${id === selectedId ? "on" : ""}" style="--tint:${deptOf(r).tint}"
+    const floor = Room.holder === id;
+    const next = !floor && Room.queued(id);
+    const cls = [
+      id === selectedId ? "on" : "",
+      floor ? "floor" : "",
+      next ? "next" : "",
+      hears && !floor && !next ? "hears" : ""
+    ].filter(Boolean).join(" ");
+    const title = floor ? r.title + " is answering"
+      : next ? r.title + " is waiting to answer"
+      : hears ? r.title + " is listening — click to hand them this conversation"
+      : id === selectedId ? "Answering now"
+      : "Hand this conversation to " + r.title;
+    return `<button class="castChip ${cls}" style="--tint:${deptOf(r).tint}"
         data-cast="${esc(id)}" ${id === selectedId ? 'aria-current="true"' : ""}
-        title="${id === selectedId ? "Answering now" : "Hand this conversation to " + esc(r.title)}">
-        ${avatarSVG(r, "", 22)}<span class="nm">${esc(r.title)}</span>
+        title="${esc(title)}" aria-label="${esc(title)}">
+        ${avatarSVG(r, "", 22)}<span class="nm">${esc(r.title)}</span><span class="st" aria-hidden="true"></span>
       </button>`;
   }).join("");
   $("#castAdd").textContent = cast.length > 1 ? "+ Add" : "+ Bring in";
@@ -4014,7 +4159,11 @@ function cancelAnswer(key, silent){
    transcript at the same time.
    src.vm overrides the channel metadata (ambient asks log channel "voice"
    with the classifier confidence); src.speak forces the reply through TTS
-   regardless of the per-persona speaker toggle. Returns the outcome:
+   regardless of the per-persona speaker toggle; src.queueSpeech makes that
+   reply join the back of the speech queue instead of cutting off whoever is
+   mid-sentence, which is how two personas in one room take turns; src.cast
+   is the room this answer belongs to, so its voice is one nobody else in it
+   is using. Returns the outcome:
    "answered" | "failed" | "canceled" | "blocked". */
 async function sendTo(key, roleId, text, src){
   const r = roleById(roleId);
@@ -4034,7 +4183,10 @@ async function sendTo(key, roleId, text, src){
     : (input && text === input.value && voiceMeta.target === input
       ? consumeVoiceMeta() : { channel:"chat" });
   if(input && dictTarget.input === input) discardDictation();
-  Speech.stop();
+  /* Typing is a barge-in: you get the floor and whoever was talking stops. An
+     overheard answer is not — it waits for the room to finish the sentence it
+     is on. */
+  if(!(src && src.queueSpeech)) Speech.stop();
   /* A conversation reached through the pop-out or an ambient ask may never have
      been opened here, so make sure it has a record before it gets a message. */
   if(!convs[key]) makeConv(roleId, { id: key });
@@ -4047,6 +4199,10 @@ async function sendTo(key, roleId, text, src){
   const ctl = new AbortController();
   inflight.set(key, ctl);
   pending.add(key);
+  /* who is actually answering, which is not always who is selected — a room
+     routes an overheard question to whoever owns it, and the typing indicator
+     has to wear that persona's face, not the one whose chip is lit */
+  answering.set(key, roleId);
   VoiceState.set("thinking", roleId);
   /* your own send always shows itself — scroll preservation is for renders
      you didn't cause, not for the message you just wrote */
@@ -4058,7 +4214,13 @@ async function sendTo(key, roleId, text, src){
     (threads[key] = threads[key] || []).push({ role:"assistant", content:reply, at:Date.now(), speaker:roleId });
     /* speak if this conversation is on screen with the speaker on, or the
        asker (ambient) asked for it outright */
-    if((convId === key && tab === "chat" && ttsOn(roleId)) || (src && src.speak)) Speech.speakReply(r, reply);
+    if((convId === key && tab === "chat" && ttsOn(roleId)) || (src && src.speak)){
+      const cast = (src && src.cast) || castOf(key);
+      Speech.speakReply(r, reply, {
+        queue: !!(src && src.queueSpeech),
+        voice: cast.length > 1 ? Speech.roomVoices(cast).get(roleId) : null
+      });
+    }
   }catch(err){
     outcome = err.canceled ? "canceled" : "failed";
     if(!(err.canceled && ctl.silent)){
@@ -4070,6 +4232,7 @@ async function sendTo(key, roleId, text, src){
     /* always executed — the UI can never be left waiting on a dead promise */
     pending.delete(key);
     inflight.delete(key);
+    answering.delete(key);
     VoiceState.clear("thinking", roleId);
     touchConv(key);
     if(convId === key) renderThread();
@@ -6226,6 +6389,163 @@ function syncPip(){
 $("#pipBtn").addEventListener("click", () => PopOut.open(convId, selectedId));
 
 /* =================================================================
+   THE ROOM — more than one persona listening to the same microphone.
+
+   One browser has one speech recogniser, so there is one ear, not
+   one per persona. What makes several personas usable in a single
+   conversation is therefore not parallel listening — it is FLOOR
+   CONTROL: every persona in the cast judges the same utterance
+   against its own brief, exactly one is given the floor, and nobody
+   is ever cut off mid-sentence by somebody else.
+
+   Routing an utterance, in order:
+
+   1. DIRECT ADDRESS. "Head of Marketing, what's pipeline?" is a
+      decision, not a vote — it goes straight to that persona and is
+      gated by their brief alone, which is the same path a
+      one-persona conversation takes. Only aliases that identify
+      exactly one member of the cast count; a word two personas both
+      answer to addresses neither.
+
+   2. PANEL. Otherwise every persona in the cast (capped at
+      PANEL_CAP) runs the ordinary classifier gate CONCURRENTLY,
+      each scoped by its own Task and Context — the instructions
+      behind the scenes are what decide who this was for, with no
+      extra configuration anywhere. Whoever clears the transcript
+      -adjusted confidence bar and ranks highest takes the floor.
+
+   3. FAIRNESS. A persona that answered within COOLDOWN_MS carries a
+      small penalty. It is applied to the RANKING only, never to the
+      bar: it breaks near-ties toward whoever has not just spoken and
+      can neither admit an unqualified persona nor exclude a
+      qualified one.
+
+   4. A SECOND VOICE, at most. If another persona is independently
+      sure (>= SECOND_MIN) and answering a different topic, it takes
+      the floor after the first one — so a genuine two-part question
+      gets both halves, and a room of six never becomes a chorus.
+
+   Nothing here overlaps: answers are serialised per conversation by
+   `pending` as they always were, and speech is queued turn by turn
+   rather than cancelled, so the second persona starts speaking when
+   the first has finished the sentence it was on.
+================================================================= */
+const ROOM = {
+  PANEL_CAP: 6,               // personas asked about one utterance
+  MAX_SPEAKERS: 2,            // how many of them may answer it
+  SECOND_MIN: 0.72,           // a follow-up must be this sure to be worth the room's time
+  RECENCY_PENALTY: 0.12,      // ranking only — never moves the bar
+  COOLDOWN_MS: 45000,
+  PANEL_CEILING_MS: 26000     // one classifier round across the whole panel + margin
+};
+/* The names a persona answers to. Rank words are dropped from one end or the
+   other so "Head of Marketing" also answers to "Marketing" and "Demand
+   Generation Manager" to "Demand Generation" — but only ever as a whole
+   phrase, never a loose keyword. */
+const RANK_HEAD = /^(?:head of|vp of|vice president of|director of|chief|senior|lead|principal)\s+/i;
+const RANK_TAIL = /\s+(?:manager|executive|engineer|specialist|counsel|officer|lead|director|generalist)$/i;
+function roleAliases(r){
+  const t = String(r.title || "").trim().toLowerCase();
+  if(!t) return [];
+  const out = [t];
+  const head = t.replace(RANK_HEAD, "").trim();
+  const tail = t.replace(RANK_TAIL, "").trim();
+  [head, tail].forEach(a => { if(a.length >= 3 && out.indexOf(a) < 0) out.push(a); });
+  return out;
+}
+/* An alias only addresses somebody if it addresses exactly one somebody: in a
+   cast holding both a VP of Sales and an Account Executive, "sales" is still
+   unambiguous, but two roles that both shorten to the same phrase lose it. */
+function castAliases(cast){
+  const seen = new Map();
+  cast.forEach(id => {
+    const r = roleById(id); if(!r) return;
+    roleAliases(r).forEach(a => seen.set(a, seen.has(a) ? null : id));
+  });
+  const out = [];
+  seen.forEach((id, alias) => { if(id) out.push({ alias, id }); });
+  /* longest first, so "head of marketing" wins over "marketing" */
+  return out.sort((a, b) => b.alias.length - a.alias.length);
+}
+const rxEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/* Vocative positions only, and every pattern is anchored to one end of the
+   utterance or the other. Naming a role in passing — "we should ask marketing
+   about it sometime" — is talking ABOUT somebody, not TO them, and must not
+   outrank the persona whose question it actually is. The imperative "ask
+   legal whether we can sign this" only counts when it opens the sentence,
+   which is exactly what separates it from "I'll ask legal later". */
+function addressedRole(text, cast){
+  const t = String(text).toLowerCase().replace(/\s+/g, " ").trim();
+  const LEAD = "^(?:hey|hi|hello|ok|okay|so|now|alright)?[ ,]*";
+  for(const { alias, id } of castAliases(cast)){
+    const a = rxEsc(alias);
+    const pats = [
+      new RegExp(LEAD + a + " ?[,:—–-]"),                       // "Marketing, what's…"
+      new RegExp("[,:] ?" + a + " ?[?.!]*$"),                    // "…, over to you Marketing?"
+      new RegExp(LEAD + "(?:let'?s )?ask (?:the )?" + a + "\\b"),// "Ask legal whether…"
+      new RegExp(LEAD + "(?:a )?question for (?:the )?" + a + "\\b")
+    ];
+    if(pats.some(p => p.test(t))) return id;
+  }
+  return null;
+}
+const Room = {
+  holder:null, conv:null, why:"", since:0, line:[], lastSpoke:{},
+  /* who is in this conversation's room — the cast, with whoever is on screen
+     guaranteed to be in it, capped so one enormous cast can't fan out a
+     classifier call per person without limit */
+  castFor(key){
+    const cast = castOf(key).slice();
+    if(key === convId && roleById(selectedId) && cast.indexOf(selectedId) < 0) cast.unshift(selectedId);
+    return cast.filter(roleById).slice(0, ROOM.PANEL_CAP);
+  },
+  multi(key){ return this.castFor(key).length > 1; },
+  take(id, why, key){
+    this.holder = id; this.conv = key || convId; this.why = why || ""; this.since = Date.now();
+    this.lastSpoke[id] = Date.now();
+    renderAmbient(); renderCast();
+  },
+  release(id){
+    if(id && this.holder !== id) return;
+    this.holder = null; this.why = "";
+    renderAmbient(); renderCast();
+  },
+  clear(){
+    this.holder = null; this.conv = null; this.why = ""; this.line.length = 0;
+    renderAmbient(); renderCast();
+  },
+  setLine(ids){ this.line = ids.slice(); renderAmbient(); renderCast(); },
+  queued(id){ return this.line.indexOf(id) >= 0; },
+  busy(){ return !!(this.holder || this.line.length); },
+  cooled(id){ return Date.now() - (this.lastSpoke[id] || 0) > ROOM.COOLDOWN_MS; },
+  /* The utterance is fully routed and answered. The floor is NOT given up
+     while its holder is still audibly talking — the reply lands well before
+     the last sentence of it is read out, and blanking the band there would
+     say the room had finished when it plainly hasn't. Speech hands it back. */
+  settle(){
+    this.line.length = 0;
+    if(!Speech.speaking) this.release();
+    else{ renderAmbient(); renderCast(); }
+  },
+  /* the speech queue emptied: if nobody is still answering and nobody is
+     waiting, the room is quiet again */
+  onFloorSpeechDone(){
+    if(this.holder && !pending.has(this.conv) && !this.line.length) this.release();
+    else{ renderAmbient(); renderCast(); }
+  },
+  /* Everyone stops: the answer in flight is cancelled, the queue behind it is
+     dropped, and the speech is cut. The one control that always ends a room
+     that has got away from you, without disarming the microphone. */
+  hush(){
+    const key = this.conv;
+    this.line.length = 0;
+    Speech.stop();
+    if(key && pending.has(key)) cancelAnswer(key);
+    this.clear();
+  }
+};
+
+/* =================================================================
    AMBIENT — always-on listening that answers questions it overhears.
 
    MICROPHONE ONLY, on purpose: computer-audio capture and local
@@ -6332,6 +6652,7 @@ const Ambient = {
     if(this.stageCtl){ try{ this.stageCtl.abort(); }catch(e){} this.stageCtl = null; }
     this.buffer = ""; this.interim = ""; this.bufChars = 0; this.bufWeighted = 0;
     this.queue.length = 0; this.busy = false; this.current = null;
+    Room.clear();
     this.setStage("listening");
     if(msg) micNotice(msg);
     refreshAmbient();
@@ -6376,16 +6697,29 @@ const Ambient = {
   refreshLang(){
     if(this.armed && !this.held() && this.session) this.stopListening();  // onEnd restarts
   },
+  /* One recogniser means one locale at a time. A room whose cast all share a
+     language uses it; a mixed one falls back to the persona on screen, because
+     there is no honest way to listen in two languages at once and pretending
+     otherwise would just transcribe half the room badly. */
+  roomLang(){
+    const cast = Room.castFor(convId);
+    const langs = new Set(cast.map(id => {
+      const r = roleById(id);
+      return (r && String(r.language || "").trim()) || "en-US";
+    }));
+    if(langs.size === 1) return [...langs][0];
+    const r = roleById(selectedId);
+    return (r && String(r.language || "").trim()) || "en-US";
+  },
   startListening(){
     if(!this.armed || this.held() || this.session) return;
-    const r = roleById(selectedId);
-    const lang = (r && String(r.language || "").trim()) || "en-US";
+    const lang = this.roomLang();
     this.lastStart = Date.now();
     try{
       this.session = SPEECH_ENGINES.browser_native.start(lang, {
         interim: t => { this.interim = t; if(t) this.clearStrikes(); renderAmbient(); },
         final: alts => {
-          const pick = pickAlternative(alts, roleById(selectedId));
+          const pick = pickAlternative(alts, castLexicon(Room.castFor(convId)));
           this.clearStrikes();
           this.onFragment(pick.transcript, pick.confidence);
         },
@@ -6478,9 +6812,11 @@ const Ambient = {
       return;
     }
     this.recent.push({ norm, at: now });
-    /* both are captured now: the answer belongs in the conversation that was
-       open when the question was overheard, from the persona then answering */
-    this.enqueue({ text, roleId: selectedId, conv: convId, at: now, tconf });
+    /* The conversation is captured now — the answer belongs in the one that was
+       open when the question was overheard. Who answers is decided at routing
+       time, not here: in a room the cast votes, and `askedWith` is only the
+       fallback for a conversation whose cast has since emptied. */
+    this.enqueue({ text, askedWith: selectedId, conv: convId, at: now, tconf });
   },
   enqueue(item){
     if(this.queue.length >= AMBIENT.QUEUE_CAP){
@@ -6500,57 +6836,173 @@ const Ambient = {
     catch(e){ this.log("fail", item.text, "pipeline error: " + e.message); }
     finally{
       this.busy = false; this.current = null; this.stageCtl = null; this._wd = false;
+      Room.settle();
       this.setStage("listening");
       if(this.queue.length) this.pump();
     }
   },
+  /* Route, then hand the floor over one persona at a time. Everything that can
+     hang is bounded: one AbortController covers the whole panel, and the
+     watchdog's ceilings still fire against the stage. */
   async process(item){
+    const cast = Room.castFor(item.conv);
+    const solo = cast.length < 2;
+    const only = solo ? (cast[0] || item.askedWith) : null;
+    if(solo && !roleById(only)){ this.log("fail", item.text, "no persona left in this conversation"); return; }
+
     this.setStage("classifying", item.text);
     const ctl = this.stageCtl = new AbortController();
-    let v;
-    try{ v = await this.classify(item, ctl.signal); }
-    catch(err){
+    let winners;
+    try{
+      winners = solo
+        ? await this.soloVerdict(item, only, ctl.signal)
+        : await this.panelVerdict(item, cast, ctl.signal);
+    }catch(err){
       this.log("fail", item.text, ctl.watchdog
-        ? "watchdog reset — the classifier hung past its ceiling"
+        ? "watchdog reset — the gate hung past its ceiling"
         : "classifier " + (err.timeout ? "timed out" : "failed: " + err.message));
       return;
     }
-    const tnote = typeof item.tconf === "number" ? " · transcript " + Math.round(item.tconf * 100) + "%" : "";
-    const conf = " (" + Math.round(v.confidence * 100) + "%" + tnote + ")";
+    if(!winners.length) return;                 // the verdict logged its own reason
+
+    Room.setLine(winners.map(w => w.id));
+    for(let i = 0; i < winners.length; i++){
+      if(!this.armed) return;
+      Room.setLine(winners.slice(i + 1).map(w => w.id));
+      await this.give(item, winners[i], i > 0);
+    }
+  },
+  /* One persona, the way it has always worked: its own brief is the only gate. */
+  async soloVerdict(item, roleId, signal){
+    const v = await this.classify(item, roleId, signal);
     const need = ambientRequiredConf(item.tconf);
     if(!v.needs_answer || v.confidence < need){
-      this.log("no", item.text, (v.reason || "not a question for this role") + conf +
+      this.log("no", item.text, (v.reason || "not a question for this role") + this.confNote(v, item) +
         (v.needs_answer && need > AMBIENT.CONF_MIN ? " — needed " + Math.round(need * 100) + "% for a garbled transcript" : ""));
-      return;
+      return [];
     }
-    const q = v.normalized_question || item.text;
-    this.log("ok", q, (v.topic ? v.topic + " — " : "") + "answering" + conf);
+    return [{ id: roleId, v, q: v.normalized_question || item.text, why: "" }];
+  },
+  /* A room. Direct address settles it outright; otherwise everybody judges the
+     same utterance against their own brief at the same time. */
+  async panelVerdict(item, cast, signal){
+    const spoken = addressedRole(item.text, cast);
+    if(spoken){
+      const r = roleById(spoken);
+      const out = await this.soloVerdict(item, spoken, signal);
+      if(out.length) out[0].why = "addressed by name";
+      else this.log("no", item.text, "addressed " + (r ? r.title : spoken) + ", who had nothing to answer");
+      return out;
+    }
+    const votes = await Promise.all(cast.map(id =>
+      this.classify(item, id, signal).then(v => ({ id, v }), err => ({ id, err }))));
+
+    const need = ambientRequiredConf(item.tconf);
+    const scored = votes.map(o => {
+      if(o.err || !o.v) return { id:o.id, ok:false, bad:true, conf:0, rank:0, err:o.err };
+      const conf = o.v.confidence;
+      const ok = o.v.needs_answer && conf >= need;
+      /* fairness rides on the RANK, not the bar — it can only break a near-tie */
+      const rank = ok && !Room.cooled(o.id) ? conf - ROOM.RECENCY_PENALTY : conf;
+      return { id:o.id, ok, conf, rank, v:o.v, note:o.v.reason || "" };
+    });
+    const named = id => { const r = roleById(id); return r ? r.title : id; };
+    const board = scored.slice()
+      .sort((a, b) => (b.rank || 0) - (a.rank || 0))
+      .map(s => named(s.id) + " " + (s.bad ? "—" : Math.round(s.conf * 100) + "%") + (s.ok ? "" : " ✗"))
+      .join(" · ");
+
+    /* Every gate erroring is a broken room, not a quiet one. Reported as a
+       failure so it can never read as "nobody had anything to say" — that is
+       the difference between the network being down and the question being
+       small talk, and only one of them is your problem to fix. */
+    if(scored.every(s => s.bad)){
+      this.log("fail", item.text, signal && signal.aborted
+        ? "the room's gate was cut off before anyone answered"
+        : "every gate in the room failed — " + ((scored[0].err && scored[0].err.message) || "no verdict"));
+      return [];
+    }
+    const qualified = scored.filter(s => s.ok).sort((a, b) => b.rank - a.rank);
+    if(!qualified.length){
+      this.log("no", item.text, "nobody in the room owns this" + this.confNote(null, item) + " — " + board);
+      return [];
+    }
+    const out = [{
+      id: qualified[0].id, v: qualified[0].v,
+      q: qualified[0].v.normalized_question || item.text,
+      why: "best match of " + cast.length
+    }];
+    /* at most one more, and only for a genuinely different question */
+    const second = qualified[1];
+    if(ROOM.MAX_SPEAKERS > 1 && second && second.conf >= ROOM.SECOND_MIN &&
+       this.differentTopic(second.v, qualified[0].v)){
+      out.push({
+        id: second.id, v: second.v,
+        q: second.v.normalized_question || item.text,
+        why: "adds a second answer"
+      });
+    }
+    this.log("ok", out[0].q, named(out[0].id) + " takes it" +
+      (out[1] ? ", then " + named(out[1].id) : "") + " — " + board);
+    return out;
+  },
+  /* A second voice has to earn its turn by answering a DIFFERENT question. If
+     either gate declined to name a topic there is no evidence it would add
+     anything, and the room stays with one answer — the extra one is a bonus,
+     so the missing case resolves against it rather than toward a chorus. */
+  differentTopic(a, b){
+    const norm = t => String((t && t.topic) || "").toLowerCase().replace(/[^a-z0-9 ]+/g, "").trim();
+    const x = norm(a), y = norm(b);
+    return !!x && !!y && x !== y;
+  },
+  confNote(v, item){
+    const t = typeof item.tconf === "number" ? " · transcript " + Math.round(item.tconf * 100) + "%" : "";
+    return v ? " (" + Math.round(v.confidence * 100) + "%" + t + ")" : (t ? " (" + t.slice(3) + ")" : "");
+  },
+  /* Hand one persona the floor and wait for it to finish. `follow` marks the
+     second voice on an utterance — it never cancels the first one's speech. */
+  async give(item, w, follow){
+    const r = roleById(w.id);
+    if(!r) return;
     /* the persona may already be answering a typed message — wait our turn */
     const waitUntil = Date.now() + 60000;
     while(pending.has(item.conv) && this.armed && Date.now() < waitUntil)
       await new Promise(res => setTimeout(res, 500));
     if(!this.armed) return;
-    if(pending.has(item.conv)){ this.log("fail", q, "gave up waiting for the busy thread"); return; }
-    this.setStage("answering", q);
+    if(pending.has(item.conv)){ this.log("fail", w.q, "gave up waiting for the busy thread"); return; }
+    Room.take(w.id, w.why, item.conv);
+    this.setStage("answering", w.q);
     /* the message's confidence feeds the Messages tab's TranscriptConfidence
        column — the engine's number when it gave one, else the classifier's */
-    const outcome = await sendTo(item.conv, item.roleId, q, {
-      vm: { channel:"voice", confidence: typeof item.tconf === "number" ? item.tconf : v.confidence },
-      speak: true
+    const outcome = await sendTo(item.conv, w.id, w.q, {
+      vm: { channel:"voice", confidence: typeof item.tconf === "number" ? item.tconf : w.v.confidence },
+      speak: true,
+      /* the whole no-interruption rule, in one flag: an overheard answer joins
+         the back of the speech queue and never cuts off whoever is mid-sentence */
+      queueSpeech: true,
+      cast: Room.castFor(item.conv)
     });
     if(outcome !== "answered"){
-      this.log("fail", q, this._wd
+      /* the floor stays with a persona while they are still being read out —
+         see Room.settle — but a failure gives it back at once */
+      Room.release(w.id);
+      this.log("fail", w.q, this._wd
         ? "watchdog reset — the answer hung past its ceiling"
         : (outcome === "blocked" ? "brief incomplete or thread busy" : "answer " + outcome + " — see the thread"));
+    }else if(follow){
+      this.log("ok", w.q, r.title + " added a second answer");
     }
   },
-  async classify(item, signal){
-    const r = roleById(item.roleId);
+  /* One persona's gate. Stateless on the server and scoped entirely by that
+     persona's own Task and Context, which is what lets the panel run a call
+     per persona at the same time with nothing to coordinate. */
+  async classify(item, roleId, signal){
+    const r = roleById(roleId);
     const recent = (threads[item.conv] || []).filter(m => !m.error).slice(-4)
       .map(m => ({ role: m.role, content: String(m.content).slice(0, 400) }));
     const data = await sheetCall({
       action:"classify",
-      roleId: item.roleId,
+      roleId: roleId,
       roleTitle: r ? r.title : "",
       company: state.company,
       task: r ? r.task : "",
@@ -6593,7 +7045,11 @@ const Ambient = {
     }
     if(!this.busy || !this.stageAt) return;
     const age = Date.now() - this.stageAt;
-    if(this.stage === "classifying" && age > this.CLASSIFY_CEILING_MS && this.stageCtl){
+    /* a panel is one round of concurrent calls, not N rounds, so its ceiling is
+       a single call's plus margin — not a multiple of the cast size */
+    const gateCeiling = this.current && Room.multi(this.current.conv)
+      ? ROOM.PANEL_CEILING_MS : this.CLASSIFY_CEILING_MS;
+    if(this.stage === "classifying" && age > gateCeiling && this.stageCtl){
       this.stageCtl.watchdog = true;
       try{ this.stageCtl.abort(); }catch(e){}
     }else if(this.stage === "answering" && age > this.ANSWER_CEILING_MS && this.current){
@@ -6630,21 +7086,47 @@ function refreshAmbient(){
 }
 function renderAmbient(){
   if(!Ambient.armed) return;
-  let label = "Listening", detail = "for questions to answer…", busyDot = false, deadDot = false;
+  const room = Room.castFor(convId);
+  const many = room.length > 1;
+  const holder = roleById(Room.holder);
+  let label = "Listening", busyDot = false, deadDot = false;
+  let detail = many ? "everyone in this room, for whatever they own…" : "for questions to answer…";
   const heard = (Ambient.buffer + (Ambient.interim ? " " + Ambient.interim : "")).trim();
-  if(Ambient.stage === "classifying"){ label = "Analyzing"; detail = "“" + Ambient.stageText + "”"; busyDot = true; }
-  else if(Ambient.stage === "answering"){ label = "Answering"; detail = "“" + Ambient.stageText + "”"; busyDot = true; }
-  else if(Ambient.paused){ label = "Paused"; detail = "while you dictate"; }
-  else if(Ambient.ttsHold){ label = "Paused"; detail = "while the assistant speaks"; }
+  if(Ambient.stage === "classifying"){
+    label = many ? "Asking the room" : "Analyzing";
+    detail = "“" + Ambient.stageText + "”";
+    busyDot = true;
+  }else if(Ambient.stage === "answering"){
+    label = holder ? holder.title : "Answering";
+    detail = "“" + Ambient.stageText + "”";
+    busyDot = true;
+  }else if(Ambient.paused){ label = "Paused"; detail = "while you dictate"; }
+  else if(Ambient.ttsHold){
+    label = "Paused";
+    detail = many ? "while the room speaks" : "while the assistant speaks";
+  }
   else if(Ambient.stalled){ label = "Not hearing"; detail = "the microphone may be off or blocked — still retrying"; deadDot = true; }
   else if(heard){ label = "Heard"; detail = "“" + heard.slice(-90) + "”"; }
   $("#ambientState").textContent = label;
   $("#ambientDetail").textContent = detail;
   $("#ambientBand .ambientDot").classList.toggle("busy", busyDot);
   $("#ambientBand .ambientDot").classList.toggle("dead", deadDot);
+  /* the floor holder's face, so "who is speaking" never needs the transcript */
+  const who = $("#ambientWho");
+  who.hidden = !holder;
+  who.innerHTML = holder ? avatarSVG(holder, "", 20) : "";
+  /* and whoever is behind them */
+  const nextId = Room.line.find(id => id !== Room.holder);
+  const nextRole = roleById(nextId);
+  const nx = $("#ambientNext");
+  nx.hidden = !nextRole;
+  nx.innerHTML = nextRole
+    ? avatarSVG(nextRole, "", 17) + `<span class="nm">${esc(nextRole.title)} next</span>` : "";
   const qEl = $("#ambientQueue");
   qEl.hidden = !Ambient.queue.length;
   qEl.textContent = Ambient.queue.length + " queued";
+  /* one control that always ends a room mid-flow, without giving up the mic */
+  $("#ambientStop").hidden = !(Room.busy() || Speech.speaking);
   renderAmbientLog();
 }
 function renderAmbientLog(){
@@ -6659,6 +7141,7 @@ function renderAmbientLog(){
     : `<div class="ambRow no"><span class="ico">·</span><span class="t">No decisions yet — arm it and ask something out loud.</span></div>`;
 }
 $("#ambientBtn").addEventListener("click", () => Ambient.armed ? Ambient.disarm() : Ambient.arm());
+$("#ambientStop").addEventListener("click", () => Room.hush());
 $("#ambientLogBtn").addEventListener("click", () => {
   const box = $("#ambLog");
   box.hidden = !box.hidden;
