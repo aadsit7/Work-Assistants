@@ -24,11 +24,11 @@ page, open it on a different device, clear the browser — the list is the same.
    never commit a filled-in constant.
 3. In the editor, run `checkSetup` from the function dropdown, authorize when
    Google asks, and fix anything the log reports. It also names any of the
-   three history columns below that your Sheet is missing.
+   optional columns below that your Sheet is missing.
 4. Deploy → New deployment → type **Web app**, Execute as **Me**, Who has
    access **Anyone**. Deploy, then copy the URL ending in `/exec`.
 
-### Five columns the Sheet can grow into
+### Six columns the Sheet can grow into
 
 Add these to an existing Sheet — put the header in the first empty column of the
 tab, which appends it without moving anything. A Sheet without them still works;
@@ -36,6 +36,7 @@ each one just costs the thing next to it, and `checkSetup` says which are absent
 
 | Tab | Column | Without it |
 | --- | --- | --- |
+| `Personas` | `Nickname` | Personas are addressed by job title only. A nickname typed in the app works until the tab is reloaded, then it is gone |
 | `Interactions` | `Title` | Conversations are named after their opening question and can't be renamed |
 | `Interactions` | `ParticipantIds` | A reopened conversation rebuilds its cast from who answered in it, rather than from the order people joined |
 | `Messages` | `ContextShown` | The colleague context a persona was shown in a handed-over conversation isn't kept |
@@ -359,6 +360,50 @@ author.
 A **date divider** marks each day the conversation ran across, labelled with
 the day itself — the buckets in the side menu ("Previous 7 days") are right for
 sorting a list into piles and wrong on a divider, which marks one specific day.
+
+## Nicknames: what you call somebody, not what they do
+
+A title says what a persona does. A nickname says what you call them, and the
+two were doing one job. Every signature in the transcript, every chip, every
+placeholder printed a job title, so a conversation between three people read
+like an org chart with speech in it — you do not say "VP of Sales, what's the
+forecast?", you say "Dana, what's the forecast?"
+
+**Nickname** is an optional field on every brief, next to Role title in
+Settings. Fill it in and one word changes four things at once:
+
+| | With a nickname | Blank |
+| --- | --- | --- |
+| The transcript | **Dana** · VP of Sales | **VP of Sales** |
+| The composer, the chips, the cast rail | Dana | VP of Sales |
+| The org chart | VP of Sales, with *Dana* under it | VP of Sales |
+| Saying their name out loud | Reaches them | Nothing to reach |
+
+The last row is the one that is easy to miss. **"Dana, what's the forecast?"
+hands Dana the floor** — and so does "Dana what's the forecast", with no comma,
+because nobody speaks a comma and a dictated sentence rarely carries one. A job
+title never gets that much latitude: "sales was up again" is a sentence about
+the work, not a question for the VP of Sales, so titles are still only heard as
+address when the punctuation says so. The nickname also joins the vocabulary
+the speech recogniser is scored against, which is what stops the one word that
+does the routing from being the one word it mishears.
+
+Two rules keep this honest:
+
+- **A shared name addresses nobody.** Two personas called Sam disarm the name
+  for both, the same way two roles that shorten to the same phrase always have.
+  Settings says so as you type the second one, rather than leaving you with a
+  name that quietly stopped working.
+- **A blank nickname changes nothing.** Not the transcript, not the routing,
+  and not one byte of the brief — including its fingerprint, which is why
+  adding this never sent an already-answered persona back as `STALE_BRIEF`.
+
+The persona is told its own name, in `[IDENTITY]`, or it would answer to "Dana"
+as though it had never heard the word. That means the nickname is part of the
+brief the Sheet rebuilds and fingerprints, so `buildPrompt` in `Code.gs` carries
+the identical clause — `verifyPromptParity` has a fixture for it, and one for a
+persona without a nickname whose hash is unchanged from before the field
+existed.
 
 ## What an answer looks like
 
